@@ -1,0 +1,131 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.nf
+
+/*/{Protheus.doc} telaPesoVolume
+
+Tela para preecher peso e volume da nota.
+
+@type Function
+@author Gabriel Goncalves
+@since 27/10/2025
+@version P12
+@database Oracle
+
+/*/
+User Function telaPesoVolume()
+	Private oTelaPesoVolume	:= Nil	as object
+	Private oBotaoOK		:= Nil	as object
+	Private nPesoLiquido	:= 0	as numeric
+	Private nPesoBruto		:= 0	as numeric
+	Private nVolume1		:= 0	as numeric
+	Private cEspecie1		:= ""	as character
+	Private lInclusaoNota	:= IsInCallStack("U_M460FIM")
+
+	buscaDados()
+	montaTela()
+Return
+
+/*
+	Busca os dados
+*/
+Static Function buscaDados()
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+
+	If lInclusaoNota
+		cQuery := 	getQueryBuscaDados()
+
+		MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+		(cAlias)->(DbGoTop())
+		If (cAlias)->(!EoF())
+			nPesoLiquido	:= (cAlias)->PESOLIQ
+			nPesoBruto		:= (cAlias)->PESOBRUTO
+			nVolume1		:= (cAlias)->VOLUME1
+			cEspecie1		:= "AMARRADOS"
+		EndIf
+
+		(cAlias)->(DbCloseArea())
+	Else
+		nPesoLiquido	:= SF2->F2_PLIQUI
+		nPesoBruto		:= SF2->F2_PBRUTO
+		nVolume1		:= SF2->F2_VOLUME1
+		cEspecie1		:= SF2->F2_ESPECI1
+	EndIf
+Return
+
+/*
+	Query buscar os dados
+*/
+Static Function getQueryBuscaDados()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        SUM(CASE WHEN C6_NFORI = ' ' THEN C6_ZPESO ELSE 0 END) AS PESOLIQ "	+ CRLF
+	cQuery += "        ,SUM(CASE WHEN C6_NFORI = ' ' THEN C6_ZPESOBT ELSE 0 END) AS PESOBRUTO "	+ CRLF
+	cQuery += "        ,COUNT(CASE WHEN C6_NFORI = ' ' THEN 1 END) AS VOLUME1 "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 	    AND C6_NUM		= D2_PEDIDO " + CRLF
+	cQuery += " 	    AND C6_ITEM		= D2_ITEMPV " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+Return cQuery
+
+/*
+	Monta tela de conferencia
+*/
+Static Function montaTela()
+	oTelaPesoVolume	:= MSDialog():New(0, 0, 230, 250, "Peso e Volume", , , .F., , , , , , .T., , , .T.) //Monta tela principal
+
+	@ 010, 010 Say		"Peso Liq.: "		Size 45,15 Pixel Of oTelaPesoVolume
+	@ 008, 040 MsGet	nPesoLiquido		When lInclusaoNota Picture "@E 9,999,999.999999" Size 70,10 Pixel Of oTelaPesoVolume
+
+	@ 030, 010 Say		"Peso Bruto: "		Size 45,15 Pixel Of oTelaPesoVolume
+	@ 028, 040 MsGet	nPesoBruto			When lInclusaoNota Picture "@E 9,999,999.999999" Size 70,10 Pixel Of oTelaPesoVolume
+
+	@ 050, 010 Say		"Volume: "			Size 45,15 Pixel Of oTelaPesoVolume
+	@ 048, 040 MsGet	nVolume1			When lInclusaoNota Picture "@E 9,999,999.999999" Size 70,10 Pixel Of oTelaPesoVolume
+
+	@ 070, 010 Say		"Especie: "			Size 40,10 Pixel Of oTelaPesoVolume
+	@ 068, 040 MsGet	cEspecie1			When .F. Size 40,10 Pixel Of oTelaPesoVolume
+
+	oBotaoOK	:= TButton():New( 090,	45,	"OK", oTelaPesoVolume, {|| gravaDados()}, 40, 018, , , , .T., , , , , , )
+
+	ACTIVATE MSDIALOG oTelaPesoVolume CENTERED
+Return
+
+/*
+	Grava os dados no nota
+*/
+Static Function gravaDados()
+	If lInclusaoNota
+		If Reclock("SF2", .F.)
+			SF2->F2_PLIQUI	:= nPesoLiquido
+			SF2->F2_PBRUTO	:= nPesoBruto
+			SF2->F2_VOLUME1	:= nVolume1
+			SF2->F2_ESPECI1	:= cEspecie1
+
+			SF2->(MsUnlock())
+		EndIf
+	EndIf
+
+	oTelaPesoVolume:End()
+Return

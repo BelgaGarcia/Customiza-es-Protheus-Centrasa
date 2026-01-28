@@ -1,0 +1,118 @@
+#include "totvs.ch"
+
+namespace compras.entrada
+
+/*/ {Protheus.doc} MudaOperacaTesBeneficiamento
+
+Substituir TES e Cód. Operação no documento de entrada caso exita devolução
+para a NF de Beneficiamento em questão.
+
+@type function
+@author rodolfomagalhaes - DsmSolutions
+@since 11/09/2024
+@version P12
+@database ORACLE
+
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar validacao operaçao fiscal
+@history 26/02/2025, rodolfo.magalhaes@dsmsolutions.com.br, Alteração SMUD08 para não tartar importação carga saldos iniciais de terceiros
+@history 17/11/2025, Elcilei Lopes - DsmSolutions, Asicionado a não execução quando origem for : "COMPRAS.ENTRADA.U_DEVOLUCAOINDUSTRIALIZACAO"
+@history 19/01/2026, Gabriel Gonçalves, Adicionado parametro para controlar as Especies que não devem seguir a regra
+
+@see dsm.genericos.U_checarFaturamentoAntecipado(aItens[nItem,nLotCpos])
+/*/
+User Function MudaOperacaTesBeneficiamento()
+	Local lRetorno		:= .T.
+	Local nLotCpos		:= Ascan(aHeader,{|x| Alltrim(x[2]) == "D1_LOTECTL"})
+	Local nOperPos		:= Ascan(aHeader,{|x| Alltrim(x[2]) == "D1_OPER"}) // GDFieldGet('DE_CC')
+	Local cOper1Fis		:= Alltrim(SuperGetMV("ZV_D1OPER1", .F., ""))
+	Local cOper2Fis		:= Alltrim(SuperGetMV("ZV_D1OPER2", .F., ""))
+	Local cOper3Fis		:= Alltrim(SuperGetMV("ZV_D1OPER3", .F., "")) // Operacao direta
+	Local cOper5Fis		:= Strtran(Alltrim(SuperGetMV("ZV_D1OPER5", .F., "")),";","#") // Atuará como exceção do ZV_D1OPER3
+	Local cEspeciesNota	:= AllTrim(GetNewPar("ZZ_ESPEOPE", "GER,SIGEM"))
+
+	If PodeExecutar()
+
+		If CTIPO == "B" .AND. !(Alltrim(cEspecie) $ cEspeciesNota) .AND. IsInCallStack("NFEDOCCOB")
+
+			If !Empty(aCols[n,nLotCpos]) .AND. !Empty(aCols[n,nOperPos])
+
+				lExiste := dsm.genericos.U_checarFaturamentoAntecipado(Str(n), aCols[n,nLotCpos])
+
+				If lExiste
+
+					FWAlertInfo("De acordo com a configuração padrão do parametro ZV_D1OPER1 a operação FISCAL deve ser "+cOper1Fis, "Avalia Fat. Antecipado.")
+
+					If !(Alltrim(aCols[n,nOperPos]) == Alltrim(cOper1Fis))
+
+						aCols[n,nOperPos] := AvKey(cOper1Fis,"D1_OPER")
+						If ExistTrigger('D1_OPER')
+							RunTrigger(2,n,nil,,'D1_OPER')
+							aCols[n,nOperPos] := AvKey(cOper1Fis,"D1_OPER") // Forcar preenchimento do campo apos trigger
+						Endif
+					EndIf
+
+				Else
+
+					If !(Alltrim(aCols[n,nOperPos]) == Alltrim(cOper2Fis))
+
+						FWAlertInfo("De acordo com a configuração padrão do parametro ZV_D1OPER2 a operação FISCAL deve ser "+cOper2Fis, "Avalia Fat. Antecipado.")
+
+						aCols[n,nOperPos] := AvKey(cOper2Fis,"D1_OPER")
+						If ExistTrigger('D1_OPER')
+							RunTrigger(2,n,nil,,'D1_OPER')
+							aCols[n,nOperPos] := AvKey(cOper2Fis,"D1_OPER") // Forcar preenchimento do campo apos trigger
+						Endif
+					EndIf
+				EndIf
+			EndIf
+
+		ElseIf CTIPO == "B" .AND. !(Alltrim(cEspecie) $ cEspeciesNota)
+
+			If !(Alltrim(aCols[n,nOperPos]) $ Alltrim(cOper5Fis)) .AND. !(Alltrim(aCols[n,nOperPos]) == Alltrim(cOper3Fis))
+
+				FWAlertInfo("De acordo com a configuração padrão do parametro ZV_D1OPER3 a operação FISCAL deve ser "+cOper3Fis, "Avalia Fat. direto.")
+
+				aCols[n,nOperPos] := AvKey(cOper3Fis,"D1_OPER")
+				If ExistTrigger('D1_OPER')
+					RunTrigger(2,n,nil,,'D1_OPER')
+					aCols[n,nOperPos] := AvKey(cOper3Fis,"D1_OPER") // Forcar preenchimento do campo apos trigger
+				Endif
+			EndIf
+		endif
+	Endif
+
+Return lRetorno
+
+/*/
+	Validar se pode executar a funcao
+/*/
+Static Function podeExecutar()
+	Local lRet				:= .F.	as logical
+	Local cNaoClassifica 	:= ""	as character // cfop's que nao devem ser endereçados.
+	Local nOperPos       	:= 0	as numeric
+	Local nPosCfop			:= 0	as numeric
+
+
+	nPosCfop 		:= aScan(aHeader,{|x| x[2] == "D1_CF     "})
+	cNaoClassifica	:= alltrim(SuperGetMV("ZM_NOTEND",.F., '1924/2924' ))
+	nOperPos       	:= Ascan(aHeader,{|x| Alltrim(x[2]) == "D1_OPER"}) // GDFieldGet('DE_CC')
+
+	Begin Sequence
+
+		if AllTrim(aCols[n,nPosCfop]) $ cNaoClassifica
+			Break
+		Endif
+
+		If (IsInCallStack("ESTOQUES.NF.U_IMPORTARTERCEIROS") )
+			Break
+		EndIf
+
+		If ( FwIsInCallStack("COMPRAS.ENTRADA.U_DEVOLUCAOINDUSTRIALIZACAO") ) .And. (Empty(aCols[n,nOperPos]))
+			Break
+		EndIf
+
+		lRet := .T.
+
+	End Sequence
+
+Return lRet

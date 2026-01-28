@@ -1,0 +1,778 @@
+#include "totvs.ch"
+#include "protheus.ch"
+#include "topconn.ch
+
+namespace compras.entrada
+
+/*/ {Protheus.doc} Notagerencial
+
+Gerar pré-nota para documento Gerencial
+
+@type function
+@author
+@since 26/09/2024
+@version P12
+@database ORACLE
+/*/
+User Function Notagerencial()
+	Local lContinua 		:= .T.  as logical
+
+	Private aAreaSF1		:= {}	as array
+	Private cAliasTmp		:= ""	as character
+	Private lValidaLotFor	:= .F.	as logical
+
+	aAreaSF1	:= SF1->(getArea())
+
+	lContinua := telaCabechalhoNF()
+
+	If ( lContinua == .F. )
+		Return
+	Endif
+
+Return
+
+/*/
+	Tela para informar o cabecalho NF
+/*/
+Static Function telaCabechalhoNF()
+	Local lRet              := .T.          as logical
+	Local oFont01           := Nil          as Object
+	Local oSayNf            := Nil          as Object
+	Local oSayInspecao      := Nil          as Object
+	Local oSaySerie         := Nil          as Object
+	Local oSayCliente       := Nil          as Object
+	Local oSayDtEmissao     := Nil          as Object
+	Local oSayObrData       := Nil          as Object
+	Local oSayObrDoc        := Nil          as Object
+	Local oSayObrInsp       := Nil          as Object
+	Local oSayObrCliente    := Nil          as Object
+
+	Local oDialog           := Nil          as Object
+	Local oPainelCentral    := Nil          as Object
+
+	Private oSayNomeCliente := Nil          as Object
+	Private cNumInspecao	:= ""           as character
+	Private cCodCliente     := ""           as character
+	Private cLojCliente     := ""           as character
+	Private cNumDocumento   := ""           as character
+	Private cNomeCliente	:= ""           as character
+	Private cSerie          := Space(3)     as character
+	Private dDtEmisssao     := CtoD(" ")    as date
+	Private aInspecao		:= {}			as array
+
+	cNumDocumento   := AvKey("","F1_DOC")
+	cCodCliente		:= GetNewPar("ZZ_CLIGER",AvKey("","A1_COD"))
+	cLojCliente		:= GetNewPar("ZZ_LOJGER",AvKey("","A1_LOJA"))
+	cNumInspecao	:= Space(400)
+
+	oDialog := FWDialogModal():New()
+	oDialog:SetEscClose(.T.)
+	oDialog:setTitle("Nota Fiscal Gerencial")
+
+	oDialog:setSize(150, 300)
+	oDialog:createDialog()
+	oDialog:addCloseButton(Nil, "Cancelar")
+	oDialog:addOkButton( { || FWMsgRun(,  {|oSay| iif(geraPreNota(oSay),oDialog:OOWNER:END(),)},"Processando", "Aguarde a geração da copia da nota." )},"Confirmar")
+
+	oPainelCentral  := TPanel():New( ,,, oDialog:getPanelMain() )
+	oPainelCentral:Align := CONTROL_ALIGN_ALLCLIENT
+
+	oFont01         	:= TFont():New( "Segoe UI Semibold",0,-13,,.T.,0,,700,.F.,.F.,,,,,, )
+	oSayInspecao		:= TSay():New( 007,015,{||"No.Inspeção(s)"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,052,008)
+	oSaySeparado		:= TSay():New( 015,015,{||"Separado ;"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,052,008)
+
+	oSayNf          	:= TSay():New( 028,015,{||"No.Documento"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,052,008)
+	oSaySerie       	:= TSay():New( 043,015,{||"Série"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,052,008)
+	oSayCliente     	:= TSay():New( 058,015,{||"Cliente"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,052,008)
+	oSayDtEmissao   	:= TSay():New( 073,015,{||"Data Emissao"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,052,008)
+	oSayNomeCliente 	:= TSay():New( 058,150,{||cNomeCliente},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_BLACK,CLR_WHITE,152,008)
+
+	oSayObrInsp			:= TSay():New( 008,062,{||"*"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_HRED,CLR_WHITE,004,008)
+	oSayObrDoc      	:= TSay():New( 029,062,{||"*"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_HRED,CLR_WHITE,004,008)
+	oSayObrCliente  	:= TSay():New( 059,040,{||"*"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_HRED,CLR_WHITE,004,008)
+	oSayObrData     	:= TSay():New( 074,057,{||"*"},oPainelCentral,,oFont01,.F.,.F.,.F.,.T.,CLR_HRED,CLR_WHITE,004,008)
+	oGetNumInsp     	:= TGet():New( 007,070,{|u| If(PCount()>0,cNumInspecao:=u,cNumInspecao)},oPainelCentral,190,008,'',,CLR_BLACK,CLR_WHITE,,,,.T.,"",,,.F.,.F.,,.F.,.F.,"","cNumInspecao",,)
+	oGetNumInsp:bValid  := {||validaInspecao()}
+
+	obtnInsp      		:= TButton():New( 007,260,"Filtrar",oPainelCentral,{ || FWMsgRun(,  {|oSay| pesquisaInspecao(oSay)},"Processando", "Aguarde a geração Inspeção." )},032,011,,,,.T.,,"",,,,.F. )
+
+	oGetNumDoc      	:= TGet():New( 028,070,{|u| If(PCount()>0,cNumDocumento:=u,cNumDocumento)},oPainelCentral,055,008,'',,CLR_BLACK,CLR_WHITE,,,,.T.,"",,,.F.,.F.,,.F.,.F.,"","cNumDocumento",,)
+	oGetNumDoc:bchange	:= {|| formatarDocumento()}
+	oGetSerie       	:= TGet():New( 043,070,{|u| If(PCount()>0,cSerie:=u,cSerie)},oPainelCentral,036,008,'',,CLR_BLACK,CLR_WHITE,,,,.T.,"",,,.F.,.F.,,.F.,.F.,"","cSerie",,)
+	oGetCliente	    	:= TGet():New( 058,070,{|u| If(PCount()>0,cCodCliente:=u,cCodCliente)},oPainelCentral,040,008,'',,CLR_BLACK,CLR_WHITE,,,,.T.,"",,,.F.,.F.,,.F.,.F.,"SA1GER","cCodCliente",,,, .T.)
+	oGetCliente:bValid  := {||validaCliente()}
+
+	oGetLoja        	:= TGet():New( 058,120,{|u| If(PCount()>0,cLojCliente:=u,cLojCliente)},oPainelCentral,023,008,'',,CLR_BLACK,CLR_WHITE,,,,.T.,"",,,.F.,.F.,,.F.,.F.,"","cLojCliente",,)
+	oGetLoja:bValid  	:= {||validaCliente()}
+
+	oGetDtEmissao   	:= TGet():New( 073,070,{|u| If(PCount()>0,dDtEmisssao:=u,dDtEmisssao)},oPainelCentral,049,008,'',,CLR_BLACK,CLR_WHITE,,,,.T.,"",,,.F.,.F.,,.F.,.F.,"","dDtEmisssao",,,, .T.)
+
+	oDialog:Activate()
+
+Return lRet
+
+/*/
+	Validar o campo inspecao
+/*/
+Static Function validaInspecao()
+	Local lRet      	:= .T.  as logical
+	Local nRecord		:= 0	as numeric
+	Local cTabela   	:= ""	as character
+	Local cIndTmp   	:= ""	as character
+	Local cCampos   	:= ""	as character
+	Local cInsNaoExiste	:= ""	as character
+
+	dbSelectArea("SF1")
+	SF1->(dbSetOrder(1))
+
+	cTabela   := "SD1"
+	cIndTmp   := GetNextAlias()
+	cCampos   := "D1_LOTEFOR"
+	DbSelectArea(cTabela)
+
+	If !Empty(cNumInspecao)
+		aInspecao	:= StrTokArr(Alltrim(cNumInspecao),";")
+		IndRegua(cTabela, cIndTmp, cCampos)
+		(cTabela)->(IndexKey())
+		For nRecord := 1 To Len(aInspecao)
+			If !( (cTabela)->(dbSeek(Alltrim(aInspecao[nRecord]))))
+				cInsNaoExiste +=  Alltrim(aInspecao[nRecord])+CRLF
+			Else
+			
+				If ( SF1->(dbSeek(FwxFilial("SF1")+(cTabela)->D1_DOC+(cTabela)->D1_SERIE+(cTabela)->D1_FORNECE+(cTabela)->D1_LOJA)) ) .And. ( Alltrim(SF1->F1_ESPECIE) <> "GER" )
+					FWAlertWarning("Inspeção '"+Alltrim(aInspecao[nRecord])+"' não faz parte nota gerencial","Nota Fiscal Gerencial")
+					lRet := .F.
+					Return .F.
+				Endif
+			Endif
+		Next
+	Endif
+
+	If !(Empty(cInsNaoExiste))
+		FWAlertWarning("Inspeção abaixo não existe."+CRLF+CRLF+cInsNaoExiste, "Nota Fiscal Gerencial")
+		lRet := .F.
+	Endif
+
+Return lRet
+
+/*/
+	Valida cliente informado
+/*/    
+Static Function validaCliente()
+	Local cFiltro   := ""   as character
+	Local lRet      := .T.  as logical
+
+	dbSelectArea("SA1")
+	SA1->(dbSetOrder(1))
+
+	If !Empty(cCodCliente)
+		cFiltro := cCodCliente
+		If !Empty(cLojCliente)
+			cFiltro += cLojCliente
+		Endif
+		If SA1->(dbSeek(FwxFilial("SA1")+cFiltro))
+			cNomeCliente := SA1->A1_NOME
+		Else
+			FWAlertHelp("Cliente não encontrado.", "Infrome cliente cadastrado.")
+			cNomeCliente := ""
+			cLojCliente := AvKey("","A1_LOJA")
+			lRet := .F.
+		Endif
+	Endif
+Return lRet
+
+/*/
+	Gera Pre-Nota
+/*/    
+Static Function geraPreNota(oSay)
+	Local lRet  		:= .T.  as logical
+	Local lContinua		:= .T.  as logical
+	Local aAutoCab		:= {}	as array
+	Local aAutoItens	:= {}	as array
+	Local cMsg			:= ""	as character
+
+	Private lMsErroAuto		:= .F.	as logical
+	Private lMsHelpAuto		:= .F.	as logical
+	Private lAutoErrNoFile	:= .F.	as logical
+	Private aErroLog		:= {}	as array
+
+	lContinua := validaDadosEntrada()
+
+	RestArea(aAreaSF1)
+
+	If ( lContinua == .F. )
+		Return .F.
+	Endif
+
+	aAutoCab	:= getAutoCab()
+	aAutoItens 	:= getAutoItens()
+
+	If ( Len(aErroLog) == 0 )
+
+		MsExecAuto({|x,y| MATA140(x,y)},aAutoCab,aAutoItens,3)
+
+		If ( lMsErroAuto )
+			cMsg := "Erro ao realizar a copia da nota gerencial."+CRLF+CRLF
+			cMsg += Mostraerro("C:")
+			Aadd(aErroLog,{3,cMsg,"Copia Nota Gerencial",cNumDocumento,cSerie,cCodCliente,cLojCliente,dDtEmisssao})
+			lRet := .F.
+		Else
+			FWAlertSuccess("Nota fiscal copiada com sucesso", "Copia Nota Fiscal")
+			lRet := .T.
+			SF1->(dbSeek(FwxFilial("SF1")+cNumDocumento+cSerie+cCodCliente+cLojCliente))
+		Endif
+
+	Endif
+
+	If ( Len(aErroLog) > 0 )
+		errosLogs()
+	Endif
+
+Return lRet
+
+/*/
+	Formatar numero documento com Zeros a esquerda
+/*/	
+Static Function formatarDocumento()
+
+	Default cNumDocumento := ""
+
+	If ( IsDigit(cNumDocumento) )
+		cNumDocumento	:= StrZero(Val(cNumDocumento),9)
+	Else
+		cNumDocumento	:= StrZero(0,9)
+	EndIf
+Return
+
+/*/
+	Validar se documento informado já existe
+/*/
+Static Function validaDocumentoEntrada()
+	Local lRet			:= .T.								as logical
+	Local cDocEntrada	:= AvKey(cNumDocumento,"F2_DOC")	as character
+	Local cSerEntrada	:= AvKey(cSerie,"F2_SERIE")			as character
+	Local cForEntrada	:= AvKey(cCodCliente,"F2_CLIENTE")	as character
+	Local cLojEntrada	:= AvKey(cLojCliente,"F2_LOJA")		as character
+
+	dbSelectArea("SF1")
+	SF1->(dbSetOrder(1))
+	If ( SF1->(dbSeek(FwxFilial("SF1")+cDocEntrada+cSerEntrada+cForEntrada+cLojEntrada)))
+		FWAlertHelp("Numero documento informado já existe para cliente.", "Verificar o numero do docuneto informado.")
+		lRet := .F.
+	Endif
+
+Return lRet
+
+/*/
+	Validar dados de entrada
+/*/
+Static Function validaDadosEntrada()
+	If Empty(cNumInspecao)
+		FWAlertHelp("Numero da inspeção é obrigatório.", "Preencher o campo Numero Inspeção.")
+		oGetNumInsp:Setfocus()
+		Return .F.
+	ElseIf Empty(cNumDocumento)
+		FWAlertHelp("Numero do documento é obrigatório.", "Preencher o campo Numero Documento.")
+		oGetNumDoc:Setfocus()
+		Return .F.
+	ElseIf Empty(cCodCliente)
+		FWAlertHelp("Cliente é obrigatório.", "Preencher o campo Cliente.")
+		oGetCliente:Setfocus()
+		Return .F.
+	ElseIf Empty(cLojCliente)
+		FWAlertHelp("Loja Cliente é obrigatório.", "Preencher o campo Loja Cliente.")
+		oGetLoja:Setfocus()
+		Return .F.
+	ElseIf Empty(Dtos(dDtEmisssao))
+		FWAlertHelp("Data emissão é obrigatório.", "Preencher o campo Data emissão.")
+		oGetDtEmissao:Setfocus()
+		Return .F.
+	ElseIf !validaDocumentoEntrada()
+		Return .F.
+	Endif
+
+Return .T.
+
+/*
+	Monta o Cabeçalho da Rotina Automática
+*/
+Static Function getAutoCab()
+	Local aAutoCab 		:= {}	as array
+	Local cTabela   	:= ""	as character
+	Local cIndTmp   	:= ""	as character
+	Local cCampos   	:= ""	as character
+
+	cTabela   := "SD1"
+	cIndTmp   := GetNextAlias()
+	cCampos   := "D1_LOTEFOR"
+	DbSelectArea(cTabela)
+
+	aInspecao	:= StrTokArr(Alltrim(cNumInspecao),";")
+	IndRegua(cTabela, cIndTmp, cCampos)
+	(cTabela)->(IndexKey())
+	(cTabela)->(dbSeek(Alltrim(aInspecao[1])))
+
+	aAdd( aAutoCab, { "F1_FILIAL"	, FWxFilial("SF1")		, Nil } )
+	aAdd( aAutoCab, { "F1_TIPO"		, "B"       			, Nil } )
+	aAdd( aAutoCab, { "F1_FORMUL"	, "N"					, Nil } )
+	aAdd( aAutoCab, { "F1_DOC"		, cNumDocumento	    	, Nil } )
+	aAdd( aAutoCab, { "F1_SERIE"	, cSerie	    		, Nil } )
+	aAdd( aAutoCab, { "F1_DTDIGIT"	, dDatabase				, Nil } )
+	aAdd( aAutoCab, { "F1_ESPECIE"	, "NF"    				, Nil } )
+	aAdd( aAutoCab, { "F1_FORNECE"	, cCodCliente    		, Nil } )
+	aAdd( aAutoCab, { "F1_LOJA"		, cLojCliente			, Nil } )
+	aAdd( aAutoCab, { "F1_EMISSAO"	, dDtEmisssao			, Nil } )
+	aAdd( aAutoCab, { "F1_ZNFGER"	, (cTabela)->D1_DOC		, Nil } )
+	aAdd( aAutoCab, { "F1_ZSERGER"	, (cTabela)->D1_SERIE	, Nil } )
+	aAdd( aAutoCab, { "F1_ZFORGER"	, (cTabela)->D1_FORNECE	, Nil } )
+	aAdd( aAutoCab, { "F1_ZLOJGER"	, (cTabela)->D1_LOJA	, Nil } )
+
+Return aAutoCab
+
+/*
+	Recupera os Campos dos Itens da Rotina Automática
+*/
+Static Function getAutoItens()
+	Local aRecord			:= {}	as array
+	Local aAutoItens		:= {}	as array
+	Local nSaldoProduto		:= 0	as numeric
+	Local cMsg				:= ""	as character
+	Local cTesGer			:= ""	as character
+	Local cArmazem			:= ""	as character
+	Local nRecord			:= 0	as numeric
+	Local cTabela   		:= ""	as character
+	Local cIndTmp   		:= ""	as character
+	Local cCampos   		:= ""	as character
+
+	cTesGer		:= GetNewPar("ZZ_TESGERB","")
+	cArmazem	:= GetNewPar("ZZ_ARMGERB","")
+
+	cTabela   := "SD1"
+	cIndTmp   := GetNextAlias()
+	cCampos   := "D1_LOTEFOR"
+
+	aInspecao	:= StrTokArr(Alltrim(cNumInspecao),";")
+	IndRegua(cTabela, cIndTmp, cCampos)
+	(cTabela)->(IndexKey())
+
+	For nRecord := 1 To Len(aInspecao)
+		If ( (cTabela)->(dbSeek(Alltrim(aInspecao[nRecord]))))
+
+			aRecord 	:= {}
+
+			nSaldoProduto := (cTabela)->D1_QUANT - (cTabela)->D1_QTDEDEV
+
+			If ( nSaldoProduto > 0 )
+				aAdd( aRecord, { "D1_ITEM"		,	(cTabela)->D1_ITEM	, NIL})
+				aAdd( aRecord, { "D1_COD"		,	(cTabela)->D1_COD 	, NIL})
+				aAdd( aRecord, { "D1_QUANT"		,	(cTabela)->D1_QUANT	, NIL})
+				aAdd( aRecord, { "D1_VUNIT"		,	(cTabela)->D1_VUNIT	, NIL})
+				aAdd( aRecord, { "D1_TOTAL"		,	(cTabela)->D1_VUNIT * (cTabela)->D1_QUANT, NIL})
+				If !Empty(cTesGer)
+					aAdd( aRecord, { "D1_TES"		,	cTesGer   		, NIL})
+				Endif
+				If !Empty(cArmazem)
+					aAdd( aRecord, { "D1_LOCAL"		,	cArmazem  		, NIL})
+				Endif
+				aAdd( aRecord, { "D1_LOTECTL"	,	(cTabela)->D1_LOTECTL	, NIL})
+				aAdd( aRecord, { "D1_DTVALID"	,	(cTabela)->D1_DTVALID	, NIL})
+				aAdd( aRecord, { "D1_LOTEFOR"	,	(cTabela)->D1_LOTEFOR		, NIL})
+
+				aAdd(aAutoItens,aRecord)
+			Else
+				cMsg := "Não existe saldo no documento gerencial para ser beneficiado."
+				Aadd(aErroLog,{3,cMsg,"Copia Nota Gerencial",(cTabela)->D1_DOC,(cTabela)->D1_SERIE,(cTabela)->D1_FORNECE,(cTabela)->D1_LOJA,(cTabela)->D1_EMISSAO,(cTabela)->D1_COD})
+			Endif
+		Endif
+	Next
+
+Return aAutoItens
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+	Local cTitulo		:= ""	as character
+
+	cTitulo := "Copia Nota Fiscal Gerencial"
+
+	AADD(aDadosCampos,{"TITERRO" 	,"Erro"			,"C",030,00,""})
+	AADD(aDadosCampos,{"F1_DOC" 	,"No.Documento"	,"C",009,00,""})
+	AADD(aDadosCampos,{"F1_SERIE" 	,"Serie"		,"C",003,00,""})
+	AADD(aDadosCampos,{"F1_FORNECE"	,"Forncedor"    ,"C",008,00,""})
+	AADD(aDadosCampos,{"F1_LOJA"	,"Loja"    		,"C",004,00,""})
+	AADD(aDadosCampos,{"F1_EMISSAO"	,"Emissao"    	,"D",008,00,""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return
+
+/*/
+	Verificar Inspecao
+/*/
+Static Function pesquisaInspecao(oSay)
+	Local cQuery		:= ""	as character
+	Local cAlias		:= ""	as character
+	Local cFiltro		:= ""	as character
+	Local nPos			:= 0	as numeric
+
+	Private aListaInp	:= {}	as array
+
+	If ( Empty(cNumInspecao))
+		If !FWAlertYesNo("Não foi informado inspeção, será filtrado todos os itens."+CRLF+"Deseja continuar o filtro?", "Nota Fiscal Gerencial")
+			Return
+		Endif
+	Endif
+	cAlias	:= GetNextAlias()
+
+	cQuery 	:= getQryInspecao()
+	TcQuery cQuery New Alias(cAlias)
+
+	dbSelectArea("SD1")
+	SD1->(dbSetorder(1))
+
+	dbSelectArea("SF1")
+	SF1->(dbSetorder(1))
+
+	(cAlias)->(dbGotop())
+
+	While !(cAlias)->(eof())
+
+		cFiltro := (cAlias)->D1_DOC+(cAlias)->D1_SERIE+(cAlias)->D1_FORNECE+(cAlias)->D1_LOJA
+
+		If ( SF1->(dbSeek(FwxFilial("SF1")+cFiltro)) ) .And. ( Alltrim(SF1->F1_ESPECIE) == "GER" )
+
+			If SD1->(dbSeek(FwxFilial("SD1")+cFiltro))
+
+				While !SD1->(eof()) .And. SD1->D1_FILIAL == FwxFilial("SD1") .And. SD1->D1_DOC+SD1->D1_SERIE+SD1->D1_FORNECE+SD1->D1_LOJA == cFiltro
+					nPos := aScan(aListaInp,{|x| x[1]+x[2]+x[3]+x[4]+x[5] == SD1->D1_DOC+SD1->D1_SERIE+SD1->D1_FORNECE+SD1->D1_LOJA+SD1->D1_LOTEFOR })
+					If ( nPos == 0)
+						Aadd(aListaInp,{SD1->D1_DOC,SD1->D1_SERIE,SD1->D1_FORNECE,SD1->D1_LOJA,SD1->D1_LOTEFOR,SD1->D1_QTDEDEV,SD1->D1_QUANT,SD1->D1_ITEM})
+					Endif
+					SD1->(dbSkip())
+				Enddo
+			Endif
+		Endif
+
+		(cAlias)->(dbSkip())
+	Enddo
+
+	mostraMarkBrowser()
+
+Return
+
+/*/
+	Query selecionar itens para inspecao
+/*/
+Static Function getQryInspecao()
+	Local cQuery		:= ""	as character
+	Local nRecord		:= 0 	as numeric
+	Local cInsQuery		:= ""	as character
+
+	cQuery += "SELECT  D1_DOC,D1_SERIE,D1_FORNECE,D1_LOJA FROM "+RetSqlTab("SD1")+CRLF
+	cQuery += "INNER JOIN "+RetSqlTab("SF1") +" ON 1 = 1 "+CRLF
+	cQuery += "AND "+RetSqlDel("SF1")+CRLF
+	cQuery += "AND SF1.F1_FILIAL = SD1.D1_FILIAL"+CRLF
+	cQuery += "AND SF1.F1_FORNECE = SD1.D1_FORNECE"+CRLF
+	cQuery += "AND SF1.F1_LOJA  = SD1.D1_LOJA"+CRLF
+	cQuery += "AND SF1.F1_DOC = SD1.D1_DOC"+CRLF
+	cQuery += "AND SF1.F1_SERIE = SD1.D1_SERIE"+CRLF
+	cQuery += "WHERE "+RetSqlDel("SD1")+ " AND "+RetSqlFil("SD1")+CRLF
+
+	aInspecao	:= StrTokArr(Alltrim(cNumInspecao),";")
+
+	For nRecord := 1 To Len(aInspecao)
+		If ( nRecord == 1 )
+			cInsQuery += "('"+Alltrim(aInspecao[nRecord])+"'"
+		Else
+			cInsQuery += ",'"+Alltrim(aInspecao[nRecord])+"'"
+		Endif
+
+		If nRecord == Len(aInspecao)
+			cInsQuery += ")"
+		Endif
+	Next
+	If !Empty( cInsQuery )
+		cQuery += "AND D1_LOTEFOR IN "+cInsQuery+CRLF
+	Else
+		cQuery += "AND D1_LOTEFOR <> ' '"+CRLF
+	Endif
+	cQuery += "AND F1_ESPECIE = 'GER'"+CRLF
+	cQuery += "AND (D1_QUANT - D1_QTDEDEV) > 0 "+CRLF
+	cQuery += "ORDER BY D1_DOC,D1_ITEM
+
+Return cQuery
+
+/*/
+	Mostra itens numa MarkBrowser
+/*/
+Static Function mostraMarkBrowser()
+	Local oDialog			:= Nil	as object
+	Local oPainelCentral	:= Nil	as object
+	Local aHeaderTmp		:= {}   as array
+	Local oTAbelaTmp		:= Nil	as object
+	Local nRecord			:= 0 	as numeric
+
+	Private lInverte    	:= .F.	as logical
+	Private cMark       	:= ""	as character
+	Private oMarkBrowse		:= Nil	as object
+	Private aInspSel		:= {}	as array
+
+	cAliasTmp	:= GetNextAlias()
+	cMark       := GetMark()
+
+	criaTabelaTmp(@oTAbelaTmp)
+
+	DbSelectArea(cAliasTmp)
+	(cAliasTmp)->( DbSetOrder(1) )
+	(cAliasTmp)->( DbGoTop() )
+
+	For nRecord := 1 To Len(aListaInp)
+
+		If( RecLock(cAliasTmp, .T.) )
+			If Alltrim(aListaInp[nRecord,05]) $ cNumInspecao
+				(cAliasTmp)->OK			:= cMark
+			Else
+				(cAliasTmp)->OK			:= " "
+			Endif
+			(cAliasTmp)->NUMDOC		:= aListaInp[nRecord,01]
+			(cAliasTmp)->SERIE		:= aListaInp[nRecord,02]
+			(cAliasTmp)->FORNECE	:= aListaInp[nRecord,03]
+			(cAliasTmp)->LOJAFOR	:= aListaInp[nRecord,04]
+			(cAliasTmp)->INSPECAO	:= aListaInp[nRecord,05]
+			(cAliasTmp)->QUANTDV	:= aListaInp[nRecord,06]
+			(cAliasTmp)->QUANTNF	:= aListaInp[nRecord,07]
+			(cAliasTmp)->SALDO		:= (cAliasTmp)->QUANTNF - (cAliasTmp)->QUANTDV
+			(cAliasTmp)->ITEM		:= aListaInp[nRecord,08]
+
+			MsUnLock()
+		EndIf
+
+	Next
+
+	aHeaderTmp	:= colunasMarkbrowser()
+
+	oDialog := FWDialogModal():New()
+	oDialog:SetEscClose(.T.)
+	oDialog:setTitle("Seleção Inspeção Nota Fiscal Gerencial")
+	oDialog:setSize(210, 450)
+	oDialog:createDialog()
+	oDialog:addCloseButton(Nil, "Cancelar")
+	oDialog:addOkButton( { || FWMsgRun(,  {|oSay| iif(atualizarInspecao(oSay),oDialog:OOWNER:END(),)},"Processando", "Aguarde a atualização." )},"Confirmar")
+
+	oPainelCentral  := TPanel():New( ,,, oDialog:getPanelMain() )
+	oPainelCentral:Align := CONTROL_ALIGN_ALLCLIENT
+
+	(cAliasTmp)->(dbGotop())
+
+	oMarkBrowse := MsSelect():New( cAliasTmp,"OK","",aHeaderTmp,@lInverte,@cMark,{10,10,10,10},,,oPainelCentral,,)
+	oMarkBrowse:oBrowse:Align			:=CONTROL_ALIGN_ALLCLIENT
+	oMarkBrowse:bAval					:= {|| marcaDesmarcaArquivos(1)}
+	oMarkBrowse:oBrowse:lhasMark 		:= .T.
+	oMarkBrowse:oBrowse:lCanAllmark 	:= .T.
+	//oMarkBrowse:oBrowse:bAllMark 		:= {|| marcaDesmarcaArquivos(2)}
+
+	oMarkBrowse:oBrowse:Refresh()
+
+	oDialog:Activate()
+
+Return
+
+/*/
+	Atualizar campo de inspecao
+/*/
+Static Function atualizarInspecao(oSay)
+	Local lRet				:= .T.	as logical
+	Local cInsSelecioanda	:= "" as character
+
+	(cAliasTmp)->(dbGotop())
+	While !(cAliasTmp)->(EOF())
+
+		If ( Marked("OK") )
+			If Empty(cInsSelecioanda)
+				cInsSelecioanda := Alltrim((cAliasTmp)->INSPECAO)
+			Else
+				cInsSelecioanda += " ; "+Alltrim((cAliasTmp)->INSPECAO)
+			Endif
+		Endif
+		(cAliasTmp)->(dbSkip())
+	Enddo
+
+	If Empty(cInsSelecioanda)
+		FWAlertWarning("Não foi selecionado 'Inspeção'. É obrigatorio selecionar", "Seleção Inspeção Nota Fiscal Gerencial")
+		lRet := .F.
+	Else
+		cNumInspecao := cInsSelecioanda
+	Endif
+
+	(cAliasTmp)->(dbGotop())
+
+Return lRet
+
+/*/
+	Criar tabela temporaria
+/*/
+Static Function criaTabelaTmp(oTabelaTmp)
+	Local aFields    := {}	as array
+
+	//Monta estrutura de campos da temporária
+	aAdd(aFields, { "OK"       	, "C"	, 02, 0 })
+	aAdd(aFields, { "INSPECAO"	, "C"	, 18, 0 })
+	aAdd(aFields, { "NUMDOC"  	, "C"	, 09, 0 })
+	aAdd(aFields, { "SERIE"  	, "C"	, 03, 0 })
+	aAdd(aFields, { "FORNECE"  	, "C"   , 08, 0 })
+	aAdd(aFields, { "LOJAFOR"  	, "C"	, 04, 0 })
+	aAdd(aFields, { "QUANTNF"  	, "N"   , 11, 2 })
+	aAdd(aFields, { "QUANTDV"  	, "N"   , 11, 2 })
+	aAdd(aFields, { "SALDO"  	, "N"   , 11, 2 })
+	aAdd(aFields, { "ITEM"  	, "C"   , 04, 0 })
+
+	oTabelaTmp:= FWTemporaryTable():New(cAliasTmp)
+	oTabelaTmp:SetFields( aFields )
+	oTabelaTmp:AddIndex("01", {"INSPECAO"} )
+	oTabelaTmp:Create()
+
+Return
+
+/*/
+	Define as colunas do markbrowser
+/*/
+Static Function colunasMarkbrowser()
+	Local aStruct  	:= {}	as array
+
+	aAdd(aStruct, { "OK"       	,, " "				,""  })
+	aAdd(aStruct, { "INSPECAO"	,, "No. Inspecao"	,"@!" })
+	aAdd(aStruct, { "NUMDOC"  	,, "Nota Fiscal"	,"@!" })
+	aAdd(aStruct, { "SERIE"  	,, "Serie"			,"@!" })
+	aAdd(aStruct, { "FORNECE"  	,, "Fornecedor"		,"@!" })
+	aAdd(aStruct, { "LOJAFOR"  	,, "Loja"			,"@!" })
+	aAdd(aStruct, { "QUANTNF"  	,, "Quantidade"		,"@E 99999999.99" })
+	aAdd(aStruct, { "QUANTDV"  	,, "Qtd.Devolvida"	,"@E 99999999.99" })
+	aAdd(aStruct, { "SALDO"  	,, "Qtd.Saldo"		,"@E 99999999.99" })
+
+Return aStruct
+
+/*/
+	Funcao executada ao Marcar/Desmarcar um registro.
+/*/
+Static Function marcaDesmarcaArquivos(nOpcao)
+	Local nRegistroTmp  := (cAliasTmp)->(RECNO())
+
+	If ( nOpcao == 1 )
+		RecLock(cAliasTmp,.F.)
+		If ( !Marked("OK") )
+			If ( validaSelecaoInspecao("M") == .T. )
+				(cAliasTmp)->OK := cMark
+			Endif
+		Else
+			validaSelecaoInspecao("D")
+			(cAliasTmp)->OK := ""
+		Endif
+		(cAliasTmp)->(MsUnLock())
+	Endif
+	(cAliasTmp)->(dbGoto(nRegistroTmp))
+	oMarkBrowse:oBrowse:Refresh()
+
+Return
+
+/*/
+	Valida a marcacao da inspecao
+/*/
+Static Function validaSelecaoInspecao(nOpcao)
+	Local lRet			:= .T.	as logical
+	Local nPos			:= 0 	as numeric
+	Local cNumDocSel	:= ""	as character
+	Local cSerieSel		:= ""	as character
+	Local cFornecSel	:= ""	as character
+	Local cLojaSel		:= ""	as character
+
+	cNumDocSel	:= (cAliasTmp)->NUMDOC
+	cSerieSel	:= (cAliasTmp)->SERIE
+	cFornecSel	:= (cAliasTmp)->FORNECE
+	cLojaSel	:= (cAliasTmp)->LOJAFOR
+
+	nPos := aScan(aInspSel,{|x| x[1]+x[2]+x[3]+x[4] == cNumDocSel + cSerieSel + cFornecSel + cLojaSel })
+
+	If ( nOpcao == "M")
+		If ( nPos == 0) .And. ( Len(aInspSel) > 0 )
+			FWAlertWarning("Não é possivel selecionar documento diferente do já selecionado.", "Seleção Inspeção Nota Fiscal Gerencial")
+			lRet := .F.
+		Else
+			Aadd(aInspSel,{cNumDocSel , cSerieSel , cFornecSel , cLojaSel })
+		Endif
+	Else
+		If ( nPos > 0 )
+			aDel(aInspSel, nPos)
+			aSize(aInspSel, Len(aInspSel) - 1)
+		Endif
+	Endif
+
+Return lRet
+
+
+/*/
+	Programa Ajusta parametro de pergunta
+/*/
+
+Static Function AjustaSX1( cPerg, aPerg, aHelp )
+	Local aArea     := GetArea()	as array
+	Local aCpoPerg  := {}			as array
+	Local nX        := 0			as numeric
+	Local nY        := 0			as numeric
+
+	// DEFINE ESTRUTUA DO ARRAY DAS PERGUNTAS COM AS PRINCIPAIS INFORMACOES
+	AADD( aCpoPerg, 'X1_ORDEM'   ) 	// 01 = Ordem da Pergunta
+	AADD( aCpoPerg, 'X1_PERGUNT' ) 	// 02 = Descricao Portugues
+	AADD( aCpoPerg, 'X1_PERSPA'  ) 	// 03 = Descrucai Espanhol
+	AADD( aCpoPerg, 'X1_PERENG'  ) 	// 04 = Descricao Ingles
+	AADD( aCpoPerg, 'X1_VARIAVL' ) 	// 05 = Variavel do item "mv_ch"
+	AADD( aCpoPerg, 'X1_TIPO'    ) 	// 06 = Tipo do conteudo de resposta da pergunta
+	AADD( aCpoPerg, 'X1_TAMANHO' ) 	// 07 = Tamanho do campo para a resposta da pergunta
+	AADD( aCpoPerg, 'X1_DECIMAL' ) 	// 08 = Numero de casas decimais da resposta, se houver
+	AADD( aCpoPerg, 'X1_PRESEL'  ) 	// 09 = Item do cambo selecionado. Parametro cGSC = "C"
+	AADD( aCpoPerg, 'X1_GSC'     ) 	// 10 = Tipo pergunta "G" = Permite editar, "S" - Texto sem altera?o e "C" = Selecao de Dados
+	AADD( aCpoPerg, 'X1_VALID'   ) 	// 11 = Valida?o do item
+	AADD( aCpoPerg, 'X1_VAR01'   ) 	// 12 = Nome do MV_PAR para a utiliza?o nos programas
+	AADD( aCpoPerg, 'X1_DEF01'   ) 	// 13 = Conteudo Portugues primeiro combo
+	AADD( aCpoPerg, 'X1_DEF02' 	 ) 	// 14 = Conteudo Portugues segundo combo
+	AADD( aCpoPerg, 'X1_DEF03'   ) 	// 15 = Conteudo Portugues terceiro combo
+	AADD( aCpoPerg, 'X1_DEF04'   ) 	// 16 = Conteudo Portugues quarto combo
+	AADD( aCpoPerg, 'X1_DEF05'   ) 	// 17 = Conteudo Portugues quinto combo
+	AADD( aCpoPerg, 'X1_CNT01'   ) 	// 18 = Conteudo padrao da pergunta
+	AADD( aCpoPerg, 'X1_F3'      ) 	// 19 = Nome da consulta F3
+	AADD( aCpoPerg, 'X1_PYME'    ) 	// 20 = Se a pergunta estara disponivel no ambiente Pyme
+	AADD( aCpoPerg, 'X1_GRPSXG'  ) 	// 21 = C?igo do grupo de campos SXG para atualizacao automatica
+	AADD( aCpoPerg, 'X1_HELP'    ) 	// 22 = Conteudo do campo X1_HELP
+	AADD( aCpoPerg, 'X1_PICTURE' ) 	// 23 = Picture de formata?o do conteudo
+	DBSelectArea( "SX1" )
+	DBSetOrder( 1 )
+	For nX := 1 To Len( aPerg )
+		IF !DBSeek( PADR(cPerg,10) + aPerg[nX][1] )
+			RecLock( "SX1", .T. )	// Inclui
+		Else
+			RecLock( "SX1", .F. )	// Altera
+		Endif
+		// Grava informacoes dos campos da SX1
+		For nY := 1 To Len( aPerg[nX] )
+			If aPerg[nX][nY] <> NIL
+				SX1->( &( aCpoPerg[nY] ) ) := aPerg[nX][nY]
+			EndIf
+		Next
+		SX1->X1_GRUPO := PADR(cPerg,10)
+
+		MsUnlock()	// Libera Registro
+	Next
+	// Apaga perguntas nao definidas no array
+	DBSEEK(cPerg,.T.)
+	DO WHILE SX1->(!Eof()) .And. SX1->X1_GRUPO == cPerg
+		IF ASCAN(aPerg,{|Y| Y[1] == SX1->X1_ORDEM}) == 0
+			Reclock("SX1", .F.)
+			SX1->(DBDELETE())
+			Msunlock()
+		ENDIF
+		SX1->(DBSKIP())
+	ENDDO
+
+	RestArea( aArea )
+Return

@@ -1,0 +1,39 @@
+#include "totvs.ch"
+#Include "protheus.ch"
+
+namespace compras.entrada
+
+/*/ {Protheus.doc} Notagerencial
+
+Ajusta o armazem caso não for informado ZZ
+
+@type function
+@author
+@since 26/09/2024
+@version P12
+@database ORACLE
+/*/
+User Function AjustaArmazemGerencial()
+
+	Local nRecord  		:= 0	as numeric
+	Local cArmazem		:= ""	as character
+	Local nPosArmazem	:= 0 	as numeric
+	Local lErroArmZZ	:= .F.	as logical
+
+	For nRecord := 1 To Len(aCols)
+		If !( GdDeleted(nRecord,aHeader,aCols) )
+			cArmazem	:= GdFieldGet("D1_LOCAL",nRecord)
+			nPosArmazem	:= aScan(aHeader,{|x| AllTrim(x[2])=="D1_LOCAL"})
+
+			If Substr(Alltrim(cArmazem),1,1) <> "Z"
+				GdFieldPut("D1_LOCAL","ZZ",nRecord,,,.T.)
+				lErroArmZZ	:= .T.
+			Endif
+		Endif
+	Next
+
+	If ( lErroArmZZ == .T. )
+		FWAlertInfo("Foi necessario ajuste no armazem gerencial, pois estava diferente 'ZZ'", "Documento de Entrada")
+	endif
+
+Return .T.

@@ -1,0 +1,27 @@
+#include "totvs.ch"
+
+namespace estoque.conhecimento
+
+/*/ {Protheus.doc} Produto
+
+Chamar banco de conhecimento do produto OP
+
+@type function
+@author
+@since 26/09/2024
+@version P12
+@database ORACLE
+/*/
+User Function Produto(cAlias,nReg,nOpc)
+    Local nOpcaoDoc := 0    as numeric  
+
+    nOpcaoDoc   := GetNewPar("ZM_OPCCONH",3)
+
+	dbSelectArea("SB1")
+	SB1->(dbSetOrder(1))
+	
+	If ( SB1->(dbSeek(FwxFilial("SB1")+(cAlias)->C2_PRODUTO)))
+		MsDocument("SB1",SB1->(RecNo()), nOpcaoDoc)
+	Endif
+
+Return

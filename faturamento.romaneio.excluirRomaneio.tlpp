@@ -1,0 +1,112 @@
+#include "tlpp-core.th"
+#include "totvs.ch"
+
+namespace faturamento.romaneio
+
+/*/{Protheus.doc} excluirRomaneio
+
+Excluir romaneio
+
+@type Function
+@author Gabriel Goncalves
+@since 02/12/2024
+@version P12
+@database MSSQL
+
+/*/
+User Function excluirRomaneio(oModel)
+	Private cAlias
+	Private oModelCabecalho		:= oModel:GetModel( "SZ5FORM" )	as object
+	
+	buscaItensRomaneio()
+	limpaRomaneio()
+Return
+
+/*
+	Busca os itens do romaneio
+*/
+Static Function buscaItensRomaneio()
+	Local cQuery	:= ""	as character
+
+	cQuery	:= getQueryItensRomaneio()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+Return
+
+/*
+	Monta a query para buscar os itens de nota para romaneio
+*/
+Static Function getQueryItensRomaneio()
+	Local cQuery		:= ""
+
+	cQuery := "SELECT " + CRLF
+	cQuery += "        SD2.R_E_C_N_O_ AS RECSD2 "	+ CRLF
+	cQuery += "        ,0 AS RECSBF "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_ZROMAN = '"+oModelCabecalho:GetValue("Z5_DOC")+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += "UNION ALL " + CRLF
+
+	cQuery += "SELECT " + CRLF
+	cQuery += "        0 AS RECSD2 "	+ CRLF
+	cQuery += "        ,SBF.R_E_C_N_O_ AS RECSBF "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SBF") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SBF") + CRLF
+	cQuery += " 		AND BF_ZROMAN = '"+oModelCabecalho:GetValue("Z5_DOC")+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SBF") + CRLF
+Return cQuery
+
+/*
+	limpa o romaneio do sistema
+*/
+Static Function limpaRomaneio()
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+
+	If (cAlias)->(!EoF())
+		DbSelectArea("SD2")
+		DbSelectArea("SBF")
+
+		Do While (cAlias)->(!EoF())
+			If (cAlias)->RECSD2 <> 0
+				SD2->(DbGoTop())
+				SD2->(DbGoTo( (cAlias)->RECSD2 ))
+
+				If (cAlias)->RECSD2 == SD2->(Recno())
+					RecLock("SD2", .F.)
+						SD2->D2_ZROMAN	:= ""
+					SD2->(MsUnlock())
+				EndIf
+			ElseIf (cAlias)->RECSBF <> 0
+				SBF->(DbGoTop())
+				SBF->(DbGoTo( (cAlias)->RECSBF ))
+
+				If (cAlias)->RECSBF == SBF->(Recno())
+					RecLock("SBF", .F.)
+						SBF->BF_ZROMAN	:= ""
+					SBF->(MsUnlock())
+				EndIf
+			EndIf
+
+			(cAlias)->(DbSkip())
+		EndDo
+
+		FWAlertSuccess("Romaneio "+oModelCabecalho:GetValue("Z5_DOC")+" excluido com sucesso.", "Romaneio de Carga")
+	Else
+		FWAlertError("Romaneio não encontrado nas tabelas (SD2/SBF).", "Romaneio de Carga")
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return

@@ -1,0 +1,131 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.pedido
+
+/*/{Protheus.doc} segundaUnidadeMedida
+
+Altera unidade de medida para o cliente.
+
+@type Function
+@author Gabriel Goncalves
+@since 23/10/2025
+@version P12
+@database Oracle
+
+/*/
+User Function segundaUnidadeMedida()
+	Private lRetorno	:= .T.	as logical
+	Private cCampo		:= ReadVar()	as character
+
+	buscarProdutoXCliente()
+Return lRetorno
+
+/*
+	Gatilho dos dados
+*/
+Static Function buscarProdutoXCliente()
+	Local cQuery		:= ""	as character
+	Local cAlias
+	Local nPosQTDVEN	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDVEN"})	as integer
+	Local nPosZPESO		:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZPESO"})	as integer
+	Local nPosZUMNFE	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZUMNFE"})	as integer
+	Local nPosZQTDNFE	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZQTDNFE"})	as integer
+	Local nPosZVLRNFE	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZVLRNFE"})	as integer
+
+	If cCampo == "M->C6_ZVLRNFE"
+		If !Empty(aCols[n][nPosZUMNFE])
+			valorUnitarioCentrasa()
+		Else
+			lRetorno	:= .F.
+		EndIf
+	Else
+		cQuery := 	queryProdutoXCliente()
+
+		MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+		(cAlias)->(DbGoTop())
+		If (cAlias)->(!EoF())
+			If (cAlias)->FATOR_CONVERSAO > 0 //.Or. (cAlias)->A7_ZUMNFE $ "KG|TL"
+				aCols[n][nPosZUMNFE]	:= (cAlias)->A7_ZUMNFE
+				aCols[n][nPosZQTDNFE]	:= IIF(cCampo == "M->C6_QTDVEN", M->C6_QTDVEN, aCols[n][nPosQTDVEN])
+				aCols[n][nPosZVLRNFE]	:= (cAlias)->A7_ZVLRUN
+
+				If (cAlias)->A7_ZUMNFE $ "KG|TL"
+					aCols[n][nPosZQTDNFE]	:= IIF(cCampo == "M->C6_ZPESO", M->C6_ZPESO, aCols[n][nPosZPESO])
+				EndIf
+
+				If (cAlias)->A7_ZUMNFE <> "KG"
+					If (cAlias)->TIPO_CONVERSAO == "M"
+						aCols[n][nPosZQTDNFE]	:= aCols[n][nPosZQTDNFE] * (cAlias)->FATOR_CONVERSAO
+					ElseIf (cAlias)->TIPO_CONVERSAO == "D"
+						aCols[n][nPosZQTDNFE]	:= aCols[n][nPosZQTDNFE] / (cAlias)->FATOR_CONVERSAO
+					EndIf
+				EndIf
+
+				valorUnitarioCentrasa()
+			EndIf
+		EndIf
+
+		(cAlias)->(DbCloseArea())
+	EndIf
+Return
+
+/*
+	Query Produto X Cliente - SA7
+*/
+Static Function queryProdutoXCliente()
+	Local cQuery		:= ""	as character
+	Local nPosUM		:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_UM"})	as integer
+	Local nPosPRODUTO	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_PRODUTO"})	as integer
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        A7_ZUMNFE "	+ CRLF
+	cQuery += "        ,A7_CODCLI "	+ CRLF
+	cQuery += "        ,A7_ZVLRUN "	+ CRLF
+
+	cQuery += "        ,CASE WHEN Z6_FATOR IS NOT NULL THEN Z6_FATOR ELSE A7_ZCONV END AS FATOR_CONVERSAO "	+ CRLF
+	cQuery += "        ,CASE WHEN Z6_TIPO IS NOT NULL THEN Z6_TIPO ELSE A7_ZTPCONV END AS TIPO_CONVERSAO "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SA7") + CRLF
+
+	cQuery += " LEFT JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SZ6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ6") + CRLF
+	cQuery += " 	    AND Z6_UMORIG	= '"+aCols[n][nPosUM]+"' " + CRLF
+	cQuery += " 	    AND Z6_UMDEST	= A7_ZUMNFE " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SA7") + CRLF
+	cQuery += " 		AND A7_CLIENTE	= '"+M->C5_CLIENTE+"' " + CRLF
+	cQuery += " 		AND A7_LOJA		= '"+M->C5_LOJACLI+"' " + CRLF
+	cQuery += " 		AND A7_PRODUTO	= '"+aCols[n][nPosPRODUTO]+"' " + CRLF
+	cQuery += " 		AND A7_UMNFE	= '2' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SA7") + CRLF
+Return cQuery
+
+/*
+	Valor unitario Centrasa
+*/
+Static Function valorUnitarioCentrasa()
+	Local nPosPRCVEN	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_PRCVEN"})	as integer
+	Local nPosVALOR		:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_VALOR"})	as integer
+	Local nPosQTDVEN	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDVEN"})	as integer
+	Local nPosZQTDNFE	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZQTDNFE"})	as integer
+	Local nPosZVLRNFE	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZVLRNFE"})	as integer
+	Local nValorUnitario:= 0	as numeric
+	Local nValorTotal	:= 0	as numeric
+
+	nValorTotal		:= IIF(cCampo == "M->C6_ZVLRNFE", M->C6_ZVLRNFE, aCols[n][nPosZVLRNFE]) * aCols[n][nPosZQTDNFE]
+	nValorUnitario	:= nValorTotal / aCols[n][nPosQTDVEN]
+
+	aCols[n][nPosPRCVEN]	:= nValorUnitario
+	aCols[n][nPosVALOR]		:= nValorTotal
+Return

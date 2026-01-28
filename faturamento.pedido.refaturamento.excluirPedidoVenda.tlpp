@@ -1,0 +1,68 @@
+#include "protheus.ch"
+
+#define		OPERACAO_EXCLUSAO	5
+
+namespace faturamento.pedido.refaturamento
+
+/*/ {Protheus.doc} ExcluirPedidoVenda
+
+Excluir pedido de venda gerado pelo refaturamento
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 09/12/2025
+@version P12
+@database ORACLE
+
+@return - lRet - Logial - Retorna se a operação foi realizada com sucesso
+/*/
+User Function ExcluirPedidoVenda()
+	Local lRet			:= .T.	as logical
+	Local aAreaSC5		:= {}	as array
+	Local aAutoCab		:= {}	as array
+	Local aAutoItens	:= {}	as array
+	Local cMsgErro		:= ""	as character
+	Local aErrosLog		:= {}	as array
+	Local nRegLog		:= 0	as numeric
+
+	Private lMsErroAuto 	:= .F.	as logical
+	Private lMsHelpAuto    	:= .T.	as logical
+	Private lAutoErrNoFile	:= .T.	as logical
+
+	Private lExluirPVRefaturamento	:= .T.	as logical
+
+	Default cPedidoVenda	:= ""
+
+	aAreaSC5	:= SC5->(getArea())
+
+	dbSelectArea("SC5")
+	SC5->(dbSetOrder(1))
+
+	If SC5->(dbSeek(FWxFilial("SC5")+cPedidoVenda))
+		aAdd(aAutoCab, {"C5_NUM"		, SC5->C5_NUM		, Nil})
+		aAdd(aAutoCab, {"C5_TIPO"		, SC5->C5_TIPO		, Nil})
+		aAdd(aAutoCab, {"C5_CLIENTE"	, SC5->C5_CLIENTE	, Nil})
+		aAdd(aAutoCab, {"C5_LOJACLI"	, SC5->C5_LOJACLI	, Nil})
+		aAdd(aAutoCab, {"C5_LOJAENT"	, SC5->C5_LOJAENT	, Nil})
+		aAdd(aAutoCab, {"C5_CONDPAG"	, SC5->C5_CONDPAG	, Nil})
+
+		MSExecAuto({|x,y,z|Mata410(x,y,z)}, aAutoCab, aAutoItens, OPERACAO_EXCLUSAO)
+
+		If ( lMsErroAuto )
+
+			cMsgErro := "Erro ao excluir pedido de venda." + CRLF
+			cMsgErro += "No. Pedido: "+ cPedidoVenda + CRLF + CRLF
+			aErrosLog := GetAutoGrLog()
+
+			For nRegLog := 1 to Len(aErrosLog)
+				cMsgErro += aErrosLog[nRegLog] + CRLF
+			Next
+
+			aAdd(aLogErro,{3,cMsgErro,"Erro ao excluir pedido de venda.",cNotaFiscal,cSerieNota,cCodFornecedor,cLojFornecedor})
+
+			lRet := .F.
+		Endif
+
+	Endif
+
+Return lRet

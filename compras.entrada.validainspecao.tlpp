@@ -1,0 +1,61 @@
+#include "totvs.ch"
+#Include "protheus.ch"
+
+namespace compras.entrada
+
+/*/ {Protheus.doc} Validainspecao
+
+Validar a digitação da inspecao no campo D1_LOTEFOR
+
+@type function
+@author
+@since 26/09/2024
+@version P12
+@database ORACLE
+/*/
+User Function Validainspecao(cNumInspecao)
+	Local lRet		:= .T.	as logical
+	Local lValida	:= .T.	as logical
+	Local cTabela   := ""	as character
+	Local cIndTmp   := ""	as character
+	Local cCampos   := ""	as character
+	Local cMsg		:= ""	as character
+	Local cSolucao	:= ""	as character
+	Local aAreaSD1	:= {}	as array
+	Local aAreaSF1	:= {}	as array
+
+	Default cNumInspecao 	:= ""
+
+	aAreaSD1 := SD1->(getArea())
+	aAreaSF1 := SF1->(getArea())
+
+	If Type("lValidaLotFor") == "L"
+		lValida := .F.
+	Endif
+
+	dbSelectArea("SF1")
+	SF1->(dbSetOrder(1))
+
+	cTabela   := "SD1"
+	cIndTmp   := GetNextAlias()
+	cCampos   := "D1_LOTEFOR"
+	DbSelectArea(cTabela)
+
+	If !Empty(cNumInspecao)
+
+		IndRegua(cTabela, cIndTmp, cCampos)
+		(cTabela)->(IndexKey())
+		If ( (cTabela)->(dbSeek(Alltrim(cNumInspecao)))) .And. ( lValida == .T.)
+			If ( SF1->(dbSeek(FwxFilial("SF1")+(cTabela)->D1_DOC+(cTabela)->D1_SERIE+(cTabela)->D1_FORNECE+(cTabela)->D1_LOJA)) ) .And. ( Alltrim(SF1->F1_ESPECIE) == "GER" )
+				cMsg 		:= "Já exsite uma nota gerencial com numero da inspeção informado."
+				cSolucao	:= "Favor usar a opção : "+CRLF+"Outras Ações->Copiar Nf Gerencial"
+				FWAlertHelp(cMsg, cSolucao)
+				lRet := .F.
+			Endif
+		Endif
+	Endif
+
+	RestArea(aAreaSD1)
+	RestArea(aAreaSF1)
+
+Return lRet

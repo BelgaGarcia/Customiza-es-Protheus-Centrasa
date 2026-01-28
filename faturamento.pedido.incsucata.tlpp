@@ -1,0 +1,403 @@
+#include "totvs.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+#include "tbicode.ch"
+
+namespace faturamento.pedido
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} - Incluir item no pedido de venda relacionado a sucata
+
+Função responsavel por incluir item no pedido de venda relacionado a SUCATA
+selecionando os lotes e quantidades das bobinas. Os lotes das bobinas selecionadas 
+serão transferidas para o produto sucata e a somatoria destes lotes serão
+incluidas no pedido com o item SUCATA
+
+@author	   helerson.oliveira - DSM
+@since	   Outubro/2024
+@version   P12
+@obs	   SIGAFAT
+@database  Oracle
+
+Alteracoes Realizadas desde a Estruturacao Inicial
+Data       Programador     Motivo
+/*/
+//-------------------------------------------------------------------
+User Function incsucata(cPedVenda)
+
+	Private cProd     := Space(15 ) as character
+	Private cProdS    := Space(15 ) as character
+	Private cLote     := Space(13)  as character
+	Private cSLote    := Space(6)   as character
+	Private cEnder    := Space(15)  as character
+	Private nQtde     := 0
+	Private nPreco    := 0
+	Private cItPedCom := space(6)   as character
+	Private cNumPCom  := space(15)  as character
+	Private cOper     := space(2)   as character
+	Private cTES      := space(3)   as character
+	Private cCFOP     := space(4)   as character
+
+	Private oDlg      := Nil        as object
+	Private oFwl      := Nil        as object
+	Private oSC6      := Nil        as object
+
+	Private oBloco1   := Nil        as object
+	Private oBloco2   := Nil        as object
+
+	Private oGetC     := Nil        as Object
+	Private oGetL     := Nil        as Object
+	Private oGetE     := Nil        as Object
+	Private oGetS     := Nil        as Object
+	Private oGetO     := Nil        as Object
+
+	Private aSC6      := {}
+
+	Private nPosL     := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_LOCAL" })
+	Private cLocal    := aCols[n,nPosL]
+	Private nPosP     := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_PRODUTO" })
+	Private nPosD     := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_DESCRI" })
+	Private nPosIPC   := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_ITEMPC" })
+	Private nPosNPC   := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_NUMPCOM" })
+
+	cProd             := aCols[n,nPosP]
+	cDProd            := aCols[n,nPosD]
+
+	cItPedCom         := aCols[n,nPosIPC]
+	cNumPCom          := aCols[n,nPosNPC]
+
+	If Alltrim(SC5->C5_ZLOTCTL) == ""
+		FWAlertWarning("ID Bobina não informado!",">>> Atenção <<<")
+	EndIf
+
+	oDlg := MSDialog():New(300,300,550/*Altura*/,1550/*Largura*/,"Incluir Item Sucata - Pedido: " + SC5->C5_NUM,,,,DS_MODALFRAME,CLR_BLACK,CLR_WHITE,,,.T.)
+
+	oFwl := FWLayer():New()
+
+	oFwl:Init(oDlg,.F.)
+
+	oFwl:AddCollumn( 'CENTRO' , 100 , .F. )
+
+	oFwl:AddWindow( 'CENTRO' , 'B1' , '' , 060 , .F. , .F. )
+	oFwl:AddWindow( 'CENTRO' , 'B2' , '' , 040 , .F. , .F. )
+
+	oBloco1 := oFwl:GetWinPanel('CENTRO','B1')
+
+	oSC6 := TWBrowse():New(000,000,000,000,,{"Filial","Produto","Local","Saldo Lote","Num.Lote","Sub.Lote","Endereço","Descrição do Produto","Dt.Valid.Lote"},{20,30,30},oBloco1,,,,,{|| .T. },,,,,,,.F.,,.T.,,.F.,,,)
+	oSC6:Align := CONTROL_ALIGN_ALLCLIENT
+
+	oBloco2 := oFwl:GetWinPanel('CENTRO','B2')
+
+	oGetS := TGet():New(001,005,{|u| If(PCount()>0,cProdS:=u,cProdS)},oBloco2,060,012,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cProdS",,,,,,,"Cod.Prod.Sucata",1)
+	oGetS :cF3 := "SB1"
+
+	TGet():New(001,080,{|u| If(PCount()>0,nPreco:=u,nPreco)},oBloco2,080,012,"@E 99999999.999999",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"nPreco",,,,,,,"Prc.Unitario",1)
+	TGet():New(001,170,{|u| If(PCount()>0,nQtde:=u,nQtde)}  ,oBloco2,080,012,"@E 9999999.99",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"nQtde",,,,,,,"Quantidade",1)
+
+	TGet():New(001,270,{|u| If(PCount()>0,cItPedCom:=u,cItPedCom)}  ,oBloco2,050,012,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cItPedCom",,,,,,,"Item Ped.Comp",1)
+	TGet():New(001,330,{|u| If(PCount()>0,cNumPCom:=u,cNumPCom)}  ,oBloco2,060,012,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cNumPCom",,,,,,,"Num.Ped.Comp",1)
+
+	oGetO := TGet():New(001,400,{|u| If(PCount()>0,cOper:=u,cOper)}  ,oBloco2,020,12,"@!",{|| fTes(cOper)},,,,,,.T.,,,{|| .T.},,,,.F.,,,"cOper",,,,,,,"Cod.Oper.",1)
+	oGetO :cF3 := "DJ"	
+
+	oGetT := TGet():New(001,430,{|u| If(PCount()>0,cTES:=u,cTES)}  ,oBloco2,020,12,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cTES",,,,,,,"TES",1)
+	oGetT :cF3 := "SF4"	
+
+	TGet():New(001,460,{|u| If(PCount()>0,cCFOP:=u,cCFOP)}  ,oBloco2,020,12,"@!",,,,,,,.T.,,,{|| .F.},,,,.F.,,,"cCFOP",,,,,,,"CFOP",1)
+
+	TButton():New( 005 , 505 , "Confirmar" , oBloco2 , {|| F_ALTSC6()} , 040 , 014 , , , .T. , .T. , , "Confirmar" )
+	TButton():New( 005 , 555 , "Cancelar"  , oBloco2 , {|| oDlg:End()} , 040 , 014 , , , .T. , .T. , , "Cancelar"  )
+
+	F_SQLSBF()
+
+	oDlg:lEscClose := .F.
+	oDlg:lCentered := .T.
+
+	oDlg:Activate(,,,.T.,)
+
+Return
+
+
+Static Function F_SQLSBF()
+
+	Local aAlias := GetArea()
+	Local cAlias := GetNextAlias()
+	Local cQuery := ""
+
+	aSC6 := {}
+
+	cQuery := " SELECT * " + CRLF
+	cQuery += " FROM " + RetSqlName("SBF") + " " + CRLF
+	cQuery += " WHERE D_E_L_E_T_ <> '*' " + CRLF
+	cQuery += "   AND BF_FILIAL   = '" + xFilial("SBF") + "' " + CRLF
+	cQuery += "   AND BF_LOTECTL   = '" + SC5->C5_ZLOTCTL  + "' " + CRLF
+	cQuery += "   AND BF_PRODUTO   = '" + cProd  + "' " + CRLF
+	cQuery += " ORDER BY BF_LOCALIZ " + CRLF
+
+	DbUseArea(.T.,"TOPCONN",TCGenQry(,,cQuery),cAlias,.F.,.T.)
+
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+
+	While (cAlias)->(!Eof())
+
+		dValid := Ctod("  /  /    ")
+
+		DbSelectArea("SB8")
+		DbSetOrder(3)
+		If DbSeek(Fwxfilial("SB8")+ cProd + cLocal + SC5->C5_ZLOTCTL)
+			dValid := SB8->B8_DTVALID
+		Else
+			dValid := Ctod("  /  /    ")
+		EndIf
+
+		AADD( aSC6 , { (cAlias)->BF_FILIAL   ,; //-- 01
+		cProd             ,; //-- 02
+		(cAlias)->BF_LOCAL,; //-- 03
+		((cAlias)->BF_QUANT - (cAlias)->BF_EMPENHO) ,; //-- 04
+		(cAlias)->BF_LOTECTL    ,; //-- 05
+		(cAlias)->BF_NUMLOTE    ,; //-- 06
+		(cAlias)->BF_LOCALIZ    ,; //-- 07
+		cDProd                  ,; //-- 08
+		SB8->B8_DTVALID  })        //-- 09
+
+		(cAlias)->(DbSkip())
+	Enddo
+
+	(cAlias)->(DbCloseArea())
+	If !Empty(aSC6)
+		oSC6:SetArray(aSC6)
+		oSC6:bLine := {|| { aSC6[oSC6:nAt,01] ,; //-- 01
+		aSC6[oSC6:nAt,02] ,; //-- 02
+		aSC6[oSC6:nAt,03] ,; //-- 03
+		aSC6[oSC6:nAt,04] ,; //-- 04
+		aSC6[oSC6:nAt,05] ,; //-- 05
+		aSC6[oSC6:nAt,06] ,; //-- 06
+		aSC6[oSC6:nAt,07] ,; //-- 07
+		aSC6[oSC6:nAt,08] ,; //-- 08
+		aSC6[oSC6:nAt,09] }} //-- 09
+
+		oSC6:Refresh()
+	Endif
+
+	If Empty(aSC6)
+		AADD( aSC6 , { ""   ,; //-- 01
+		""       ,; //-- 02
+		""     ,; //-- 03
+		0       ,; //-- 04
+		""      ,; //-- 05
+		""      ,; //-- 06
+		""      ,; //-- 07
+		""   ,; //-- 08
+		"  /  /    "  }) //-- 09
+	EndIf
+
+	oSC6:SetArray(aSC6)
+	oSC6:bLine := {|| { aSC6[oSC6:nAt,01] ,; //-- 01
+	aSC6[oSC6:nAt,02] ,; //-- 02
+	aSC6[oSC6:nAt,03] ,; //-- 03
+	aSC6[oSC6:nAt,04] ,; //-- 04
+	aSC6[oSC6:nAt,05] ,; //-- 05
+	aSC6[oSC6:nAt,06] ,; //-- 06
+	aSC6[oSC6:nAt,07] ,; //-- 07
+	aSC6[oSC6:nAt,08] ,; //-- 08
+	aSC6[oSC6:nAt,09] }} //-- 09
+
+	oSC6:Refresh()
+
+	RestArea(aAlias)
+
+Return
+
+Static Function F_ALTSC6()
+
+	If Alltrim(cProdS) == ""
+		FWAlertWarning("Codigo do produto sucata invalido ou não encontrado!",">>> Atenção <<<")
+	Else
+		DbSelectArea("SB1")
+		DbSetOrder(1)
+		If DbSeek(fwxfilial("SB1")+cProdS)
+			If SB1->B1_LOCALIZ == "S"
+				If Len(aSC6) == 1 .And. Alltrim(aSC6[1,1]) == ""
+					FWAlertWarning("Lote(s) do ID da Bobina não encontrado!",">>> Atenção <<<")
+				Else
+					nItemS := 1 // numero do item ou numero da linha no array aSC6
+					If  nQtde > aSC6[nItemS,4]
+						FWAlertWarning("Quantidade informada maior que o saldo!",">>> Atenção <<<")
+					Else
+
+						//If Alltrim(SB1->B1_TS) == "" .Or. Empty(SB1->B1_TS)
+						DbSelectArea("SF4")
+						DbSetOrder(1)
+						If !DbSeek(Fwxfilial("SF4")+cTes) .OR. SF4->F4_TIPO <> "S"
+							FWAlertWarning("TES de saida invalido ou nao informado! ",">>> Atenção <<<")
+						Else
+
+							lMsErroAuto := .f.
+
+							dbSelectArea("SB9")
+							SB9->(dbSetorder(1))
+							If !Dbseek(fwxfilial("SB9")+cProdS+aSC6[nItemS,3])
+								aAutoB9:={}
+								nOpcao := 3
+								AADD(aAutoB9,{"B9_FILIAL",  xFilial("SB9") ,Nil})
+								AADD(aAutoB9,{"B9_COD"	 ,  cProdS	       ,Nil})
+								AADD(aAutoB9,{"B9_LOCAL" ,  aSC6[nItemS,3] ,Nil})
+
+								MsExecAuto({|x,y,z|MATA220(x,y,z)},aAutoB9,nOpcao)
+							EndIf
+
+							aAutoCabec := {}
+
+							cDocumento  := NextNumero("SD3",1,"D3_DOC",.T.)
+
+							If Empty(aAutoCabec)
+								aadd(aAutoCabec,{cDocumento,dDataBase}) //Cabecalho
+							EndIf
+
+							aLinha :={}
+
+							//Origem
+							aadd(aLinha,{"ITEM",'00'+cvaltochar(nItemS),Nil})
+							aadd(aLinha,{"D3_COD", aSC6[nItemS,2], Nil}) //Cod Produto origem
+							aadd(aLinha,{"D3_DESCRI", aSC6[nItemS,8], Nil}) //descr produto origem
+							aadd(aLinha,{"D3_UM", Posicione("SB1", 1, FWxFilial("SB1") + aSC6[nItemS,2] , "B1_UM"), Nil}) //unidade medida origem
+							aadd(aLinha,{"D3_LOCAL", aSC6[nItemS,3], Nil}) //armazem origem
+							aadd(aLinha,{"D3_LOCALIZ", PadR(aSC6[nItemS,7], tamsx3('D3_LOCALIZ') [1]),Nil}) //Informar endereÃ§o origem
+
+							//Destino
+							aadd(aLinha,{"D3_COD", cProdS, Nil}) //cod produto destino
+							aadd(aLinha,{"D3_DESCRI", Posicione("SB1", 1, FWxFilial("SB1") + cProdS , "B1_DESC"), Nil}) //descr produto destino
+							aadd(aLinha,{"D3_UM", Posicione("SB1", 1, FWxFilial("SB1") + cProdS , "B1_UM"), Nil}) //unidade medida destino
+							aadd(aLinha,{"D3_LOCAL", aSC6[nItemS,3], Nil}) //armazem destino
+							aadd(aLinha,{"D3_LOCALIZ", PadR(aSC6[nItemS,7], tamsx3('D3_LOCALIZ') [1]),Nil}) //Informar endereÃ§o destino
+
+							aadd(aLinha,{"D3_NUMSERI", "", Nil}) //Numero serie
+							aadd(aLinha,{"D3_LOTECTL", aSC6[nItemS,5], Nil}) //Lote Origem
+							aadd(aLinha,{"D3_NUMLOTE", "", Nil}) //sublote origem
+							aadd(aLinha,{"D3_DTVALID", aSC6[nItemS,9], Nil}) //data validade
+							aadd(aLinha,{"D3_POTENCI", 0, Nil}) // Potencia
+							aadd(aLinha,{"D3_QUANT", nQtde, Nil}) //Quantidade
+							aadd(aLinha,{"D3_QTSEGUM", 0, Nil}) //Seg unidade medida
+							aadd(aLinha,{"D3_ESTORNO", "", Nil}) //Estorno
+							aadd(aLinha,{"D3_NUMSEQ", "", Nil}) // Numero sequencia D3_NUMSEQ
+
+							aadd(aLinha,{"D3_LOTECTL", aSC6[nItemS,5], Nil}) //Lote destino
+							aadd(aLinha,{"D3_NUMLOTE", "", Nil}) //sublote destino
+							aadd(aLinha,{"D3_DTVALID", aSC6[nItemS,9], Nil}) //validade lote destino
+							aadd(aLinha,{"D3_ITEMGRD", "", Nil}) //Item Grade
+
+							aadd(aLinha,{"D3_CODLAN", "", Nil}) //cat83 prod origem
+							aadd(aLinha,{"D3_CODLAN", "", Nil}) //cat83 prod destino
+
+							aAdd(aAutoCabec,aLinha)
+
+							lMsErroAuto := .F.
+
+							nOpcAuto := 3
+							MSExecAuto({|x,y| mata261(x,y)},aAutoCabec,nOpcAuto)
+
+							if lMsErroAuto
+								MostraErro()
+							else
+								FWAlertSuccess("Transferencia realizada!",">>> OK <<<")
+								F_ALTACOLS()
+							Endif
+						EndIf
+					EndIf
+				EndIf
+			Else
+				FWAlertWarning("Produto SUCATA sem controle de endereço!",">>> Atenção <<<")
+			EndIf
+		Else
+			FWAlertWarning("Produto SUCATA não localizado ou invalido!",">>> Atenção <<<")
+		EndIf
+	EndIf
+Return
+
+
+Static Function F_ALTACOLS()
+
+	Local cItem  := space(02) as character
+	Local nPosIt        := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_ITEM" })
+
+	cItem := Strzero((Val(aCols[Len(aCols),nPosIt])+1),2)
+
+	DbSelectArea("SB1")
+	DbSetOrder(1)
+	DbSeek(fwxfilial("SB1")+cProdS)
+
+	aAutoCab   := {}
+	aAutoItens := {}
+	aRecord	   := {}
+
+	aadd(aAutoCab, {"C5_FILIAL" , FWxFilial("SC5")       , NIL})
+	aadd(aAutoCab, {"C5_NUM"    , SC5->C5_NUM            , NIL})
+
+	aadd(aAutoCab,{"C5_TIPO"   , SC5->C5_TIPO      , Nil})
+	aadd(aAutoCab,{"C5_CLIENTE", SC5->C5_CLIENTE   , Nil})
+	aadd(aAutoCab,{"C5_LOJACLI", SC5->C5_LOJACLI   , Nil})
+	aadd(aAutoCab,{"C5_LOJAENT", SC5->C5_LOJAENT   , Nil})
+	aadd(aAutoCab,{"C5_CONDPAG", SC5->C5_CONDPAG   , Nil})
+
+
+	aadd(aRecord, {"C6_ITEM"   , cItem  , NIL})
+	aadd(aRecord, {"C6_PRODUTO", cProdS , NIL})
+	aadd(aRecord, {"C6_QTDVEN" , nQtde  , NIL})
+	aadd(aRecord, {"C6_QTDLIB" , 0      , NIL})
+	aadd(aRecord, {"C6_PRCVEN" , nPreco , NIL})
+	aadd(aRecord, {"C6_PRUNIT" , nPreco , NIL})
+	aadd(aRecord, {"C6_VALOR"  , (nPreco*nQtde)          , NIL})
+	aadd(aRecord, {"C6_OPER"   , cOper                   , NIL})
+	aadd(aRecord, {"C6_TES"    , cTES                    , NIL})
+	aadd(aRecord, {"C6_ENTREG" , dDataBase               , NIL})
+	aadd(aRecord, {"C6_NUMPCOM", cNumPCom , NIL})
+	aadd(aRecord, {"C6_ITEMPC" , cItPedCom , NIL})
+	aadd(aRecord, {"C6_PEDCLI" , "" , NIL})
+
+	aadd(aRecord, {"C6_LOCAL"  , aSC6[nItemS,3]  , NIL})
+
+	aAdd( aRecord, { "C6_LOTECTL"	, aSC6[nItemS,5]				, NIL})
+	aAdd( aRecord, { "C6_DTVALID"	, aSC6[nItemS,9]				, NIL})
+	aAdd( aRecord, { "C6_LOCALIZ"	, PadR(aSC6[nItemS,7], tamsx3('D3_LOCALIZ') [1])				, NIL})
+
+	aAdd(aAutoItens,aRecord)
+
+	lMsErroAuto := .F.
+	MsExecAuto( {|x,y,z| MATA410(x,y,z) } , aAutoCab, aAutoItens, 4 )
+
+	if lMsErroAuto
+		MostraErro()
+	else
+		FWAlertSuccess("Pedido Alterado!",">>> OK <<<")
+		oDlg:End()
+	Endif
+
+Return
+
+
+/*
+localiza TES pela função 
+MaTesInt(2,,M->C5_CLIENT,M->C5_LOJAENT,If(M->C5_TIPO$'DB',"F","C"),M->C6_PRODUTO,"C6_TES")
+*/
+
+Static Function fTES(cCodOper)
+	If Alltrim(cProds) <> ""
+		DbSelectArea("SB1")
+		DbSetOrder(1)
+		If DbSeek(fwxfilial("SB1")+cProdS)
+			cTES := MaTesInt(2,cCodOper,SC5->C5_CLIENT,SC5->C5_LOJAENT,If(SC5->C5_TIPO$'DB',"F","C"),cProdS,"C6_TES")
+			If Alltrim(cTEs) <> ""
+				DbSelectArea("SF4")
+				DbSetOrder(1)
+				If DbSeek(Fwxfilial("SF4")+cTes)
+					cCFOP := SF4->F4_CF
+				Else
+					cCFOP := ""
+				EndIf
+			Else
+				cCFOP := ""
+			EndIf
+		Endif
+	EndIf
+Return .T.

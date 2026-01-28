@@ -1,0 +1,1588 @@
+#include "totvs.ch"
+
+namespace producao.op
+
+#DEFINE nPosC5_ZOBS			6
+
+/*/ {Protheus.doc} GERARPEDIDO
+
+Importar arquivo CSV para gerar pedido de venda e abertura de OP
+
+@type function
+@author Elcilei Lopes - DSM
+@since 16/07/2024
+@version P12
+@database ORACLE
+
+@history 25/09/2024, rodolfo.magalhaes, Implementar atualização LOTE no Empenho gerado pela Ordem de Produção.
+@history 26/09/2024, rodolfo.magalhaes, Ajustar estrutura de importacao para ID Bobina.
+@history 27/09/2024, rodolfo.magalhaes, Implementar ajuste operacao TES inteligente.
+@history 08/04/2025, gabriel.goncalves, Ajustado a forma de validar se o item deve gerar OP. Invés de validar se existe nota fiscal de origem, validar o tipo do produto. Estava tentando gerar OP de item de devolução no cenário que a 4a nota ainda não existia.
+@history 09/04/2025, gabriel.goncalves, Ajuste na validação do lote e saldo para contemplar o cenário de um nova entrada.
+@history 18/06/2025, gabriel.goncalves, Ajuste para alterar a quantidade da OP Filha nos ajuste de quantidade por peso.
+@history 24/11/2025, elcilei.lopes, Ajustado programa retorno OPER, trocado TES fixa por parametro.
+
+@obs
+CSV teste:
+C2_LINHA;C5_CLIENTE;C5_LOJACLI;C5_ZENTREG;C5_ZINSPE;C5_ZLOTCTL;C6_PRODUTO;QT_SISTEMA;C6_PRCVEN;C6_ENTREG;C6_OPER;C6_NUMPCOM;C6_ITEMPC;C5_ZOBS
+001;60894730;0040;PEDRO VIEIRA DA SILVA;INP888888        ;888888       ;031000000013   ;3000;5.35;16/07/2024;;0000002334;0001;Informar observações Numero de divisões
+
+/*/
+User Function gerarPedido()
+	Local oProcess      := nil as object
+	Local cDirIni       := ""  as character
+	Local cTipoArquivo	:= ""  as character
+	Local cTitulo       := ""  as character
+
+	Private cArquivoCsv := ""  as character
+	Private oFileCSV    := Nil as object
+	Private cAliasCab   := ""  as character
+	Private cAliasItem  := ""  as character
+	Private aRegArquivo := {}  as array
+	Private aCamposCab  := {}  as array
+	Private aCamposItem := {}  as array
+	Private cMsgAlerta  := ""  as character
+	Private aTipoCampo  := {}  as array
+	Private aErroLog    := {}  as array
+	Private cProdBobina := ""  as character
+	Private cIdBobina   := ""  as character
+	Private cInspCliente:= ""  as character
+	Private cCgcCliente := ""  as character
+	Private nPesoTotalPlano := 0 as numeric
+
+	cDirIni 		:= "C:\"
+	cTipoArquivo	:= " Arquivos Separados por vírgula (*.CSV)     | *.CSV |"
+	cTitulo 		:= "Seleção de Arquivos para Importação"
+	cMsgAlerta		:= "Importacao Plano Corte"
+
+	cArquivoCsv := cGetFile(cTipoArquivo,cTitulo,0,,.F., GETF_LOCALFLOPPY + GETF_LOCALHARD + GETF_NETWORKDRIVE )
+
+	oProcess	:=	MsNewProcess():New( { |lEnd| processarArquivoCSV(@oProcess) },"Gerando importação Arquivo","Executando...",.t.)
+	oProcess:Activate()
+
+	If ( Len(aErroLog) > 0 )
+		errosLogs()
+	Endif
+
+
+	if select(cAliasItem)>0
+		DbCloseArea(cAliasItem)
+	Endif
+
+	if select(cAliasCab)>0
+		DbCloseArea(cAliasCab)
+	endif
+
+Return
+
+/*/
+	Gerar importacao do arquivo
+/*/
+Static Function processarArquivoCSV(oProcess)
+
+	oProcess:SetRegua1(2)
+	oProcess:IncRegua1( "Processando o arquivo CSV" )
+	oProcess:SetRegua2(5)
+
+	If !( validarArquivo(@oProcess))
+		Return .F.
+	Endif
+
+	if !( geraTabelaTMP(@oProcess) )
+		Return .F.
+	Endif
+
+	aCabArquivo	 := Separa(aRegArquivo[1],";",.T.)
+	Aadd(aCabArquivo,"C6_IDENTB6")
+
+	If !( validaCabecalhoCSV(@oProcess) )
+		Return .F.
+	Endif
+
+	If !( gravaPedidoArquivoTmp(@oProcess) )
+		Return .F.
+	Endif
+
+	oProcess:IncRegua1( "Gravando Pedido de Venda e OP" )
+	If !( geraPedidoVendaOP(@oProcess) )
+		Return .F.
+	Endif
+
+Return
+
+/*/
+	Validacao do arquivo CSV
+/*/
+Static Function validarArquivo(oProcess)
+	Local lRet  			:= .T.		as logical
+
+	oProcess:IncRegua2("Vaidando arquivo CSV")
+
+	if !File(cArquivoCsv)  //Verificar se arquivo existe
+		MsgAlert("Arquivo não encontado!",cMsgAlerta)
+		Return .f.
+	endif
+
+	oFileCSV := FwFileReader():New(cArquivoCsv)
+	If !(oFileCSV:Open())
+		MsgAlert("Não possivel abrir o arquivo",cMsgAlerta)
+		Return .f.
+	Else
+		aRegArquivo := oFileCSV:getAllLines()
+	endif
+
+	If Len(aRegArquivo) == 0
+		MsgAlert("Nenhum registro foi encontrado no arquivo",cMsgAlerta)
+		Return  .F.
+	Endif
+
+
+Return lRet
+
+/*/
+	Gerar tabela TMP
+/*/
+Static Function geraTabelaTMP(oProcess)
+
+	Local aFields			:= {}		as array
+	Local oTableCab		  	:= Nil		as object
+	Local oTableItem	  	:= Nil		as object
+	Local aTamanhoX3 		:= {}		as array
+	Local cError			:= ""		as character
+	// Local bError			:= {|| }	as codeblock
+	Local lRet				:= .T.		as logical
+	Local nReg				:= 0		as numeric
+
+	oProcess:IncRegua2("Criando tabela temporária")
+
+	aCamposCab 	:= {"C5_ZLOTCTL","C5_CLIENTE","C5_LOJACLI","C5_ZENTREG","C5_ZINSPE","C5_ZOBS"}
+	aCamposItem	:= {"C6_ITEM","C6_PRODUTO","C6_LOCAL","QT_SISTEMA","QTD_PLANO","PESO_PLANO","C6_PRCVEN", "C6_VALOR", "C6_OPER", "C6_TES","C6_ENTREG","C6_NUMPCOM","C6_ITEMPC",;
+		"C6_NFORI","C6_SERIORI","C6_ITEMORI","C6_QTDLIB","C6_IDENTB6","C2_LINHA","C5_ZOBS","C6_ZENTREG"}
+
+	cAliasCab	:= GetNextAlias()
+	cAliasItem	:= GetNextAlias()
+
+	// Begin Sequence
+
+	lRet		:= .T.
+	cError 		:= ""
+	// bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+	oTableCab	:= FWTemporaryTable():New( cAliasCab )
+
+	aFields		:= {}
+
+	For nReg := 1 To Len(aCamposCab)
+		aTamanhoX3	:= FWTamSX3(aCamposCab[nReg])
+		aadd(aFields   , {aCamposCab[nReg], aTamanhoX3[3], aTamanhoX3[1], aTamanhoX3[2]})
+		aadd(aTipoCampo, {aCamposCab[nReg], aTamanhoX3[3]})
+	Next
+
+	oTableCab:SetFields( aFields )
+	oTableCab:AddIndex("01", {"C5_ZLOTCTL"})
+	oTableCab:Create()
+
+	oTableItem	:= FWTemporaryTable():New( cAliasItem )
+
+	aFields		:= {}
+
+	For nReg := 1 To Len(aCamposItem)
+		Do Case
+		Case aCamposItem[nReg] == "QT_SISTEMA"
+			aTamanhoX3	:= FWTamSX3("C6_QTDVEN")
+			aAdd(aFields,{aCamposItem[nReg]	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+			Aadd(aTipoCampo,{aCamposItem[nReg],aTamanhoX3[3]})
+		Case aCamposItem[nReg] == "QTD_PLANO"
+			aTamanhoX3	:= FWTamSX3("C6_ZQTDPLC")
+			aAdd(aFields,{aCamposItem[nReg]	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+			Aadd(aTipoCampo,{aCamposItem[nReg],aTamanhoX3[3]})
+		Case aCamposItem[nReg] == "PESO_PLANO"
+			aTamanhoX3	:= FWTamSX3("C6_ZPESO")
+			aAdd(aFields,{aCamposItem[nReg]	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+			Aadd(aTipoCampo,{aCamposItem[nReg],aTamanhoX3[3]})
+		Otherwise
+			aTamanhoX3	:= FWTamSX3(aCamposItem[nReg])
+			aAdd(aFields,{aCamposItem[nReg]	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+			Aadd(aTipoCampo,{aCamposItem[nReg],aTamanhoX3[3]})
+		End Case
+	Next
+
+	aTamanhoX3	:= FWTamSX3("C5_ZLOTCTL")
+	aAdd(aFields,{"C6_ZLOTCTL"	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+
+	oTableItem:SetFields( aFields )
+	oTableItem:AddIndex("01", {"C6_ZLOTCTL","C6_ITEM"})
+	oTableItem:Create()
+
+	// End Sequence
+
+	// ErrorBlock(bError)
+
+	// If ( !Empty(cError) )
+	// 	cMsgProcesso := "Falha criar tabela temporaria." + CRLF + cError
+	// 	lRet := .F.
+	// 	MsgAlert(cMsgProcesso, cMsgAlerta)
+	// Endif
+
+Return lRet
+
+/*/
+	Valida cabecalho do arquivo CSV
+/*/
+Static Function validaCabecalhoCSV(oProcess)
+	Local nRecord			:= 0		as numeric
+	Local nPos 				:= 0		as numeric
+	Local lRet 				:= .T.		as logical
+	Local aCamposArquivo	:= {}		as array
+
+	oProcess:IncRegua2("Validando informações do cabeçalho")
+
+	aCamposArquivo := {"C2_LINHA","A1_CGC","C6_ZENTREG","C5_ZINSPE","C5_ZLOTCTL","C5_ZOBS",;
+		"C6_PRODUTO","C6_ZPRODCLI","QT_SISTEMA","QTD_PLANO", "PESO_PLANO","C6_PRCVEN","C6_ENTREG","C6_NUMPCOM","C6_ITEMPC","C6_LOCAL"}
+
+
+	For nRecord := 1 To Len(aCamposArquivo)
+		If ( nPos := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposArquivo[nRecord]})) == 0
+			MsgAlert("Campo '"+aCamposArquivo[nRecord]+"' não foi encontrado no arquivo.", cMsgAlerta)
+			lRet := .F.
+			Exit
+		Endif
+	Next
+
+Return lRet
+
+/*/
+	Grava registros do arquivo tabela TMP
+/*/
+Static Function gravaPedidoArquivoTmp(oProcess)
+
+	Local lRet                                     := .T.  as logical
+	Local nRecord                                  := 0    as numeric
+	Local nRecordPed                               := 0    as numeric
+	Local nPosCampo                                := 0    as numeric
+	Local nPosTipoCampo                            := 0    as numeric
+	Local nPosProdutoCentrasa                      := 0    as numeric
+	Local aDadosArquivo                            := {}   as array
+	Local aDadosNfOrigem                           := {}   as array
+	Local CodigoCliente                            := ""   as character
+	Local CodigoLoja                               := ""   as character
+
+	Local cTabelaPreco                             := ""   as character
+
+	Local cError                                   := ""   as character
+	Local bError                                   :={|| } as codeblock
+	Local xValorCampo                              := Nil
+
+	Local cRetornoOperFiscalTriangularSemAtecipado := Alltrim(SuperGetMV("ZV_C6OPER1", .F., "")) as character	// Retorno operacao TRIANGULAR sem antecipado
+	Local cRetornoOperFiscalTriangularComAtecipado := Alltrim(SuperGetMV("ZV_C6OPER2", .F., "")) as character	// Retorno operacao TRIANGULAR com antecipado
+	Local cRetornoOperFiscalDireta                 := Alltrim(SuperGetMV("ZV_C6OPER4", .F., "")) as character	// Retorno operacao DIRETA
+	Local cFaturamentoOperFiscalDireta             := Alltrim(SuperGetMV("ZV_C6OPER5", .F., "")) as character	// Faturamento operacao DIRETA
+	Local cFaturamentoOperFiscalTriangular         := Alltrim(SuperGetMV("ZV_C6OPER6", .F., "")) as character	// Faturamento operacao TRIANGULAR
+
+	Local cTesOperacaoDireta					   := GetNewPar("FS_OPERDIR","092|101|102")	as character
+	Local cTesOperacaoTriangularSemAntecipado	   := GetNewPar("FS_OPERTSA","091|099|100")	as character
+	Local cTesOperacaoTriangularComAntecipado	   := GetNewPar("FS_OPERTCA","095|103|104")	as character
+
+	Local cOperDevSelecionada                      := cRetornoOperFiscalDireta // "" // Operacao selecionada para Retorno
+	Local cOperFatSelecionada          			   := cFaturamentoOperFiscalDireta // "" // Operacao selecionada para Faturamento
+
+	Local lItemDeRetorno							:= .F.
+
+	oProcess:IncRegua2("Gravando informações tabela temp.")
+
+	Begin Sequence
+
+		lRet		:= .T.
+		cError 		:= ""
+		bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+		nPosInspecao        := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "C5_ZINSPE" })
+		nPosIdBobina        := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "C5_ZLOTCTL" })
+		nPosClienteCgc      := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "A1_CGC" })
+		nPosClienteProduto  := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "C6_ZPRODCLI" })
+		nPosProdutoCentrasa := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "C6_PRODUTO" })
+		nPosQtdVen          := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "QT_SISTEMA" })
+		nPosQtdePLCorte     := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "QTD_PLANO" })
+		nPosPesoPLCorte     := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "PESO_PLANO" })
+		nPosLinhaProducao   := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "C2_LINHA" })
+
+		dbSelectArea(cAliasCab)
+
+		For nRecord := 2 To Len(aRegArquivo)
+
+			aDadosArquivo 	:= Separa(aRegArquivo[nRecord],";",.T.)
+			Aadd(aDadosArquivo,"")
+
+			DbSelectArea("SA1")
+			SA1->(dbSetOrder(3))
+			If SA1->(DbSeek(FwxFilial("SA1")+AvKey(aDadosArquivo[nPosClienteCgc],"A1_CGC")))
+				cTabelaPreco  := SA1->A1_TABELA
+				CodigoCliente := SA1->A1_COD
+				CodigoLoja    := SA1->A1_LOJA
+				cCgcCliente   := SA1->A1_CGC
+			EndIf
+
+			cIdBobina      := aDadosArquivo[nPosIdBobina]
+			cInspCliente   := aDadosArquivo[nPosInspecao]
+			aDadosNfOrigem := {}
+
+			If !Empty(cIdBobina)
+				aDadosNfOrigem	:= verificaNfOrigem(cIdBobina, cInspCliente)
+				If aDadosNfOrigem[1] == "XXX" .OR. Len(aDadosNfOrigem) == 0
+					Return .F.
+				Else
+					If !Empty(aDadosNfOrigem[9]) .And. !Empty(aDadosNfOrigem[10]) .And. aDadosNfOrigem[8] == "B"
+						SA1->(dbSetOrder(1))
+						If SA1->(DbSeek(FwxFilial("SA1")+AvKey(aDadosNfOrigem[9],"A1_COD")+AvKey(aDadosNfOrigem[10],"A1_LOJA")))
+							cTabelaPreco  := SA1->A1_TABELA
+							CodigoCliente := SA1->A1_COD
+							CodigoLoja    := SA1->A1_LOJA
+							cCgcCliente   := SA1->A1_CGC
+						EndIf
+					EndIf
+				EndIf
+			Else
+				FWAlertWarning("ID da Bobina não informado!", "ID Bobina")
+				Return .F.
+			Endif
+
+			// CABECALHO
+			If !( (cAliasCab)->(dbSeek(cIdBobina)) )
+				RecLock(cAliasCab, .T.)
+
+				For nRecordPed := 1 To Len(aCamposCab)
+
+					nPosCampo := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposCab[nRecordPed] })
+
+					If aCamposCab[nRecordPed] == "C5_CLIENTE"
+						&("(cAliasCab)->"+aCamposCab[nRecordPed]) := CodigoCliente
+					ElseIf aCamposCab[nRecordPed] == "C5_LOJACLI"
+						&("(cAliasCab)->"+aCamposCab[nRecordPed]) := CodigoLoja
+					Else
+						&("(cAliasCab)->"+aCamposCab[nRecordPed]) := aDadosArquivo[nPosCampo]
+					EndIf
+				Next
+
+				(cAliasCab)->( MsUnLock())
+
+			EndIf
+
+			// ITEMS
+			// GRAVAR ITEM RETORNO BENEFICIAMENTO
+			If !lItemDeRetorno
+				nItemSc6 := 0
+				DbSelectArea("SB1")
+
+				If ( Len(aDadosNfOrigem) > 0 )
+					nItemSc6++
+					RecLock(cAliasItem, .T.)
+					nRecordPed := 0
+					(cAliasItem)->C6_ZLOTCTL := cIdBobina
+
+					For nRecordPed := 1 To Len(aCamposItem)
+
+						nPosCampo 		:= aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposItem[nRecordPed] })
+						nPosTipoCampo 	:= aScan(aTipoCampo, { |x| Upper(Alltrim(x[1])) == aCamposItem[nRecordPed] })
+
+						If nPosCampo == 0
+							xValorCampo := ""
+						Else
+							xValorCampo 	:= aDadosArquivo[nPosCampo]
+						EndIf
+
+						If (aCamposItem[nRecordPed] == "C6_PRODUTO")
+							xValorCampo := aDadosNfOrigem[7]
+							cProdBobina := aDadosNfOrigem[7]
+
+						Elseif (aCamposItem[nRecordPed] == "C6_NFORI")
+							If aDadosNfOrigem[8] == "B"
+								xValorCampo := aDadosNfOrigem[1]
+							Else
+								xValorCampo := ""
+							EndIf
+						Elseif (aCamposItem[nRecordPed] == "C6_SERIORI")
+							If aDadosNfOrigem[8] == "B"
+								xValorCampo := aDadosNfOrigem[2]
+							Else
+								xValorCampo := ""
+							EndIf
+						ElseIf (aCamposItem[nRecordPed] == "C6_ITEMORI")
+							If aDadosNfOrigem[8] == "B"
+								xValorCampo := aDadosNfOrigem[3]
+							Else
+								xValorCampo := ""
+							EndIf
+						ElseIf (aCamposItem[nRecordPed] == "QT_SISTEMA")
+							xValorCampo := aDadosNfOrigem[4]
+						ElseIf (aCamposItem[nRecordPed] == "C6_VALOR")
+							xValorCampo := aDadosNfOrigem[14] // Tratar Valor Exato SB6
+						ElseIf (aCamposItem[nRecordPed] == "C6_QTDLIB")
+							xValorCampo := Alltrim(Str(aDadosNfOrigem[4]))
+						ElseIf (aCamposItem[nRecordPed] == "C6_PRCVEN")
+							xValorCampo := aDadosNfOrigem[5]
+						ElseIf (aCamposItem[nRecordPed] == "C6_IDENTB6")
+							xValorCampo := Alltrim(aDadosNfOrigem[6])
+						ElseIf (aCamposItem[nRecordPed] == "C6_OPER")
+
+							If aDadosNfOrigem[8] == "I" // Devolvendo com a NF da Industria
+								cOperFatSelecionada := cFaturamentoOperFiscalTriangular
+								cOperDevSelecionada := cRetornoOperFiscalTriangularComAtecipado
+							Else
+								Do Case
+								Case aDadosNfOrigem[12] $ (cTesOperacaoDireta) // Operação BN Direta
+									cOperFatSelecionada := cFaturamentoOperFiscalDireta
+									cOperDevSelecionada := cRetornoOperFiscalDireta
+
+								Case aDadosNfOrigem[12] $ (cTesOperacaoTriangularSemAntecipado) // Operação BN Triangular sem antecipado
+									cOperFatSelecionada := cFaturamentoOperFiscalTriangular
+									cOperDevSelecionada := cRetornoOperFiscalTriangularSemAtecipado
+
+								Case aDadosNfOrigem[12] $ (cTesOperacaoTriangularComAntecipado) // Operação BN Triangular com antecipado
+									cOperFatSelecionada := cFaturamentoOperFiscalTriangular
+									cOperDevSelecionada := cRetornoOperFiscalTriangularComAtecipado
+
+								Otherwise
+									cOperFatSelecionada := cFaturamentoOperFiscalTriangular
+									cOperDevSelecionada := cRetornoOperFiscalTriangularSemAtecipado
+								End Case
+							EndIf
+
+							xValorCampo := cOperDevSelecionada
+
+						ElseIf (aCamposItem[nRecordPed] == "C6_TES")
+
+							// xValorCampo := MaTesInt(2,cOperDevSelecionada,CodigoCliente,CodigoLoja,"C",aDadosArquivo[nPosProdutoCentrasa])
+							xValorCampo := MaTesInt(2,cOperDevSelecionada,CodigoCliente,CodigoLoja,"C",aDadosNfOrigem[7])
+
+							If Empty(xValorCampo)
+								xValorCampo := "998"
+							EndIf
+						ElseIf (aCamposItem[nRecordPed] == "C6_LOCAL")
+							xValorCampo := aDadosNfOrigem[13]
+						ElseIf (aCamposItem[nRecordPed] == "C5_ZOBS")
+							LOOP
+						EndIf
+
+						If (aCamposItem[nRecordPed] == "C6_ITEM")
+							&("(cAliasItem)->"+aCamposItem[nRecordPed]) := Strzero(nItemSc6,2)
+						Else
+							If aTipoCampo[nPosTipoCampo,2] == "N"
+								If Valtype(xValorCampo) == "C"
+									&("(cAliasItem)->"+aCamposItem[nRecordPed]) := Val(xValorCampo)
+								Else
+									&("(cAliasItem)->"+aCamposItem[nRecordPed]) := xValorCampo
+								EndIf
+							ElseIf aTipoCampo[nPosTipoCampo,2] == "D"
+								&("(cAliasItem)->"+aCamposItem[nRecordPed]) := CTOD(xValorCampo)
+							Else
+								&("(cAliasItem)->"+aCamposItem[nRecordPed]) := xValorCampo
+							EndIf
+						EndIf
+
+					Next nRecordPed
+
+					(cAliasItem)->( MsUnLock())
+
+				Endif
+
+				lItemDeRetorno	:= .T.
+			EndIf
+
+			// DEMAIS ITENS DA PLANILHA
+			RecLock(cAliasItem, .T.)
+			nRecordPed := 0
+			(cAliasItem)->C6_ZLOTCTL := cIdBobina
+			For nRecordPed := 1 To Len(aCamposItem)
+
+
+				nPosCampo     := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposItem[nRecordPed] })
+				nPosTipoCampo := aScan(aTipoCampo, { |x| Upper(Alltrim(x[1])) == aCamposItem[nRecordPed] })
+
+				If nPosCampo == 0
+					xValorCampo := ""
+				Else
+					xValorCampo := aDadosArquivo[nPosCampo]
+				EndIf
+
+				If (aCamposItem[nRecordPed] == "C6_PRODUTO")
+
+					lProdutoNaoExiste := .F.
+					cMessage := ""
+					If !Empty(aDadosArquivo[nPosProdutoCentrasa])
+						SB1->(dbSetOrder(1))
+						If !SB1->(DbSeek(FwxFilial("SB1")+AvKey(aDadosArquivo[nPosProdutoCentrasa],"B1_COD")))
+
+							lProdutoNaoExiste := .T.
+							cMessage := "Item: "+Str(nRecordPed)+" - Produto: "+aDadosArquivo[nPosProdutoCentrasa]+" não localizado!"
+
+						EndIf
+
+					ElseIf !Empty(aDadosArquivo[nPosClienteProduto])
+						SB1->(DBOrderNickname("DSMSB1004"))
+						If !SB1->(DbSeek(FwxFilial("SB1")+AvKey(aDadosArquivo[nPosClienteProduto],"B1_ZCODCLI")))
+
+							lProdutoNaoExiste := .T.
+							cMessage := "Item: "+Str(nRecordPed)+" - Produto: "+aDadosArquivo[nPosClienteProduto]+" não localizado!"
+
+						EndIf
+					EndIf
+
+					If lProdutoNaoExiste
+						FWAlertError(cMessage, "Cadastro de Produto")
+						Aadd(aErroLog,{3,cMessage,"Validacao Dados","","","",""})
+						Return .F.
+					EndIf
+
+					aDadosArquivo[nPosProdutoCentrasa] := SB1->B1_COD
+					xValorCampo := SB1->B1_COD
+
+				ElseIf (aCamposItem[nRecordPed] == "C6_LOCAL")
+
+					If Empty(xValorCampo)
+
+						If len(aDadosArquivo[nPosLinhaProducao]) < 3
+							aDadosArquivo[nPosLinhaProducao] := strzero(val(aDadosArquivo[nPosLinhaProducao]),3)
+						EndIf
+
+						DbSelectArea("SH1")
+						SH1->(DBOrderNickname("DSMSH1001"))
+						If SH1->(DbSeek(FwxFilial("SH1")+AvKey(aDadosArquivo[nPosLinhaProducao],"H1_LINHAPR")))
+
+							if !empty(SH1->H1_ZLOCAL)
+								xValorCampo := SH1->H1_ZLOCAL
+							else
+
+							Endif
+						Else
+							FWAlertError("Maquina (Linha PR): "+aDadosArquivo[nPosLinhaProducao]+" não localizada entre os Recursos!", "Cadastro de Produto")
+							Aadd(aErroLog,{3,"Maquina (Linha PR): "+aDadosArquivo[nPosLinhaProducao]+" não localizada entre os Recursos!","Validacao Dados","","","",""})
+							Return .F.
+						EndIf
+					Else
+						xValorCampo := StrZero(Val(aDadosArquivo[nPosCampo]),2)
+					EndIf
+
+				ElseIf (aCamposItem[nRecordPed] == "QT_SISTEMA")
+					xValorCampo := aDadosArquivo[nPosCampo]
+				ElseIf (aCamposItem[nRecordPed] == "C6_PRCVEN")
+
+					If ( Val(xValorCampo) == 0 )
+						If !Empty(cTabelaPreco)
+							xValorCampo := MaTabPrVen(cTabelaPreco, aDadosArquivo[nPosProdutoCentrasa], aDadosArquivo[nPosQtdVen], CodigoCliente,CodigoLoja,1,DDATABASE)
+						EndIf
+
+					Else
+						xValorCampo := StrTran(xValorCampo,",",".")
+					EndIf
+				ElseIf (aCamposItem[nRecordPed] == "C2_LINHA")
+					xValorCampo := StrZero(Val(aDadosArquivo[nPosCampo]),3)
+				ElseIf (aCamposItem[nRecordPed] == "C6_QTDLIB")
+					xValorCampo := "0"
+				ElseIf (aCamposItem[nRecordPed] == "C6_OPER")
+					xValorCampo := cOperFatSelecionada
+				ElseIf (aCamposItem[nRecordPed] == "C6_TES")
+
+					xValorCampo := MaTesInt(2,cOperFatSelecionada,CodigoCliente,CodigoLoja,"C",aDadosArquivo[nPosProdutoCentrasa])
+					If Empty(xValorCampo)
+						xValorCampo := "998"
+					EndIf
+
+				ElseIf (aCamposItem[nRecordPed] == "C6_NFORI")
+					xValorCampo := ""
+				ElseIf (aCamposItem[nRecordPed] == "C6_SERIORI")
+
+					xValorCampo := ""
+				ElseIf (aCamposItem[nRecordPed] == "C6_ITEMORI")
+
+					xValorCampo := ""
+				ElseIf (aCamposItem[nRecordPed] == "PESO_PLANO")
+
+					If ( Len(aDadosNfOrigem) > 0 )
+
+						nPesoTotalPlano += val(xValorCampo)
+
+						If nPesoTotalPlano > aDadosNfOrigem[11]
+							FWAlertError("Peso planejado: "+xValorCampo+" maior que o saldo da Bobina: "+Str(aDadosNfOrigem[11]),"Cadastro de Produto")
+							Aadd(aErroLog,{3,"Peso planejado: "+xValorCampo+" maior que o saldo da Bobina: "+Str(aDadosNfOrigem[11]),"Validacao Dados","","","",""})
+							Return .F.
+						Endif
+
+					EndIf
+
+				ElseIf (aCamposItem[nRecordPed] == "C5_ZOBS")
+
+					RecLock(cAliasCab, .F.)
+					&("(cAliasCab)->"+aCamposCab[nPosC5_ZOBS]) := &("(cAliasCab)->"+aCamposCab[nPosC5_ZOBS]) + CRLF + "Obs. "+Strzero(nRecordPed,2)+": " + Alltrim(xValorCampo) + CRLF
+					(cAliasCab)->( MsUnLock())
+					// LOOP
+
+				EndIf
+
+				If (aCamposItem[nRecordPed] == "C6_ITEM")
+					nItemSc6++
+					&("(cAliasItem)->"+aCamposItem[nRecordPed]) := Strzero(nItemSc6,2)
+				Else
+					If aTipoCampo[nPosTipoCampo,2] == "N"
+						&("(cAliasItem)->"+aCamposItem[nRecordPed]) := Val(xValorCampo)
+					ElseIf aTipoCampo[nPosTipoCampo,2] == "D"
+						&("(cAliasItem)->"+aCamposItem[nRecordPed]) := CTOD(xValorCampo)
+					Else
+						&("(cAliasItem)->"+aCamposItem[nRecordPed]) := xValorCampo
+					EndIf
+				EndIf
+
+			Next nRecordPed
+
+			(cAliasItem)->( MsUnLock())
+		Next
+
+	End Sequence
+
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		cMsgProcesso := "Falha criar gravar registros na tabela temporaria." + CRLF + cError
+		lRet := .F.
+		MsgAlert(cMsgProcesso, cMsgAlerta)
+	Endif
+
+Return lRet
+
+/*/
+	Gravando o pedido de compra e OP
+/*/
+Static Function geraPedidoVendaOP(oProcess)
+	Local lRet             := .T. as logical
+	Local cMsg             := ""  as character
+	Local aArea			   := getarea()
+
+	Private cNumeroPedido  := ""  as character
+	Private cOrdemProducao := ""  as character
+
+	dbSelectArea(cAliasCab)
+	(cAliasCab)->(dbGotop())
+	oProcess:SetRegua2(6)
+	While !( (cAliasCab)->(eof()) )
+
+		DbSelectArea("SG1")
+		SG1->(dbSetOrder(1))
+
+		dbSelectArea("QP6")
+		QP6->(dbSetOrder(1))
+
+		dbSelectArea("SB1")
+		SB1->(dbSetOrder(1))
+
+		dbSelectArea(cAliasItem)
+		(cAliasItem)->(dbGotop())
+		(cAliasItem)->(dbSeek((cAliasCab)->C5_ZLOTCTL))
+		While ( !(cAliasItem)->(eof()) ) .And. ( (cAliasItem)->C6_ZLOTCTL == (cAliasCab)->C5_ZLOTCTL )
+			SB1->(DbSeek(FwxFilial("SB1")+(cAliasItem)->C6_PRODUTO))
+
+			If AllTrim(SB1->B1_TIPO) $ "PA|PI" //Empty((cAliasItem)->C6_NFORI )
+				lRet := .T.
+				cMsg := ""
+
+				If !QP6->(DbSeek(FwxFilial("QP6")+(cAliasItem)->C6_PRODUTO))
+					cMsg += "Não existe ESPECIFICACAO Quality para o produto: "+(cAliasItem)->C6_PRODUTO+CRLF
+					lRet := .F.
+				EndIf
+
+				If !SG1->(DbSeek(FwxFilial("SG1")+(cAliasItem)->C6_PRODUTO))
+					cMsg += "Não existe ESTRUTURA para o produto: "+(cAliasItem)->C6_PRODUTO+CRLF
+					lRet := .F.
+				EndIf
+
+				If !SG2->(DbSeek(FwxFilial("SG2")+(cAliasItem)->C6_PRODUTO))
+					cMsg += "Não existe ROTEIRO para o produto: "+(cAliasItem)->C6_PRODUTO+CRLF
+					lRet := .F.
+				EndIf
+
+				If !lRet
+					Aadd(aErroLog,{3,cMsg,"Geração Ordem de Produção: "+(cAliasItem)->C6_PRODUTO,(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,(cAliasCab)->C5_ZLOTCTL,""})
+				EndIf
+
+			EndIf
+			(cAliasItem)->(DbSkip())
+
+		End Do
+
+		If lRet
+			Begin Transaction
+
+				lRet := gravaPedido()
+				If ( lRet == .T. )
+					lRet := gravaOrdemProducao(@oProcess)
+				Endif
+
+				If ( lRet == .F. )
+					DisarmTransaction()
+				Else
+					cMsg := "Pedido de Venda: "+cNumeroPedido+" e Ordem de Produção: "+cOrdemProducao+" gerada com sucesso"
+					Aadd(aErroLog,{1,cMsg,"Geração Pedido Venda: "+cNumeroPedido,(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,(cAliasCab)->C5_ZLOTCTL,""})
+				Endif
+
+			End Transaction
+		EndIf
+
+		(cAliasCab)->(dbSkip())
+	Enddo
+
+	restarea(aArea)
+
+Return lRet
+
+/*/
+	Grava Ordem de Producao
+/*/
+Static Function gravaOrdemProducao(oProcess)
+	Local lRet				:= .T.		as logical
+	Local aAutoCab			:= {}		as array
+	Local cError			:= ""		as character
+	Local bError			:= {|| }	as codeblock
+	Local aAreaSC6			:= SC6->(GetArea())
+	Local aErroAuto			:= {}
+	Local nIndex			:= 0
+	Local nPesoLiquido		:= 0
+	local nQuantidade	:= 0
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .T.
+	Private lAutoErrNoFile := .T.
+
+	SetModulo("SIGAPCP","PCP")
+
+	dbSelectArea("SC6")
+	SC6->(dbSetOrder(1))
+	oProcess:IncRegua2("Gravando Ordem Produção")
+
+	Begin Sequence
+
+		lRet		:= .T.
+		cError 		:= ""
+		bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+		If SC6->(dbSeek(FWxFilial("SC6")+cNumeroPedido))
+			SC5->(dbSeek(FWxFilial("SC5")+cNumeroPedido))
+
+			While ( !SC6->(Eof()) ) .And. (SC6->C6_FILIAL == FWxFilial("SC6")) .And. ( SC6->C6_NUM == cNumeroPedido )
+				SB1->(DbSeek(FwxFilial("SB1")+SC6->C6_PRODUTO))
+
+				If AllTrim(SB1->B1_TIPO) $ "PA|PI" //(Empty(SC6->C6_NFORI))
+
+					nPesoLiquido := SC6->C6_ZPESO // Para itens peso sempre observar o peso do plano de corte
+
+					aAutoCab := getAutoCab("N")
+
+					// nModulo := 25 // Inspecao Entrada
+					SetModulo("SIGAQIP", "QIP")
+
+					lMsErroAuto := .F.
+					MSExecAuto({|x, y| MATA650(x, y)}, aAutoCab, 3)
+
+					If ( lMsErroAuto )
+
+						cMsg := "Erro MATA650 ao gerar a ordem de produção. Item: "+SC6->C6_ITEM+CRLF+CRLF
+
+						aErroAuto := GetAutoGRLog()
+						For nIndex := 1 To Len(aErroAuto)
+							cMsg += StrTran(StrTran(aErroAuto[nIndex], "<", ""), "-", "") + " "
+						Next nIndex
+
+						// cMsg += Mostraerro()
+
+						Aadd(aErroLog,{3,cMsg,"Geracao Ordem Produção",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,"ID. "+(cAliasCab)->C5_ZLOTCTL,SC6->C6_PRODUTO})
+						lRet := .F.
+						Exit
+					Else
+						cOrdemProducao := SC2->(C2_NUM+C2_ITEM+C2_SEQUEN)
+						lRet := ordemProducaoAtualizaEmpenho(@oProcess, nPesoLiquido)
+					Endif
+				Endif
+				SC6->(dbSkip())
+			Enddo
+		Endif
+
+	End Sequence
+
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		cMsg := "Erro FINAL ao gerar a ordem de produção."+CRLF+CRLF + cError
+		lRet := .F.
+		Aadd(aErroLog,{3,cMsg,"Geracao Ordem Produção",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,"ID. "+(cAliasCab)->C5_ZLOTCTL,""})
+	Endif
+
+	SetModulo("SIGA"+cModulo,cModulo)
+
+	RestArea(aAreaSC6)
+
+Return lRet
+
+/*
+	Atualizar quantidade OP Filha
+*/
+Static Function atualizaOPFilha(oProcess, nPesoLiquido)
+	Local lRetorno	:= .T.
+	Local aAutoCab	:= {}
+	Local nIndex	:= 0
+	Local cMensagem	:= ""
+	Local aErroAuto	:= {}
+	Local aAreaSD4	:= SD4->(FWGetArea())
+
+	oProcess:IncRegua2("Atualizando Ordem Produção - Filha")
+
+	SC2->(DbSetOrder(1)) //FILIAL + NUM + ITEM + SEQUEN + ITEMGRD
+	If SC2->(DbSeek(xFilial("SC2")+SD4->D4_OP))
+		If SC2->C2_QUANT <> nPesoLiquido
+			aadd(aAutoCab, {"C2_FILIAL" , FwxFilial("SC2")		, NIL})
+			aadd(aAutoCab, {"C2_NUM"    , SC2->C2_NUM			, ".T."})
+			aadd(aAutoCab, {"C2_ITEM"   , SC2->C2_ITEM			, ".T."})
+			aadd(aAutoCab, {"C2_SEQUEN" , SC2->C2_SEQUEN		, ".T."})
+			aadd(aAutoCab, {"C2_PRODUTO", SC2->C2_PRODUTO		, NIL})
+			aadd(aAutoCab, {"C2_QUANT"  , nPesoLiquido			, NIL})
+			aadd(aAutoCab, {"C2_DATPRI" , SC2->C2_DATPRI		, NIL})
+			aadd(aAutoCab, {"C2_DATPRF" , SC2->C2_DATPRF		, NIL})
+			aadd(aAutoCab, {"AUTEXPLODE", "S"					, NIL})
+
+			lMsErroAuto := .F.
+			MSExecAuto({|x, y| MATA650(x, y)}, aAutoCab, 4)
+
+			If lMsErroAuto
+				cMensagem := "Erro MATA650 ao atualizar a ordem de produção - filha. Item: "+SC6->C6_ITEM+CRLF+CRLF
+
+				aErroAuto := GetAutoGRLog()
+				For nIndex := 1 To Len(aErroAuto)
+					cMensagem += StrTran(StrTran(aErroAuto[nIndex], "<", ""), "-", "") + " "
+				Next nIndex
+
+				Aadd(aErroLog,{3,cMensagem,"Atualização Ordem Produção - Filha",SC5->C5_CLIENTE,SC5->C5_LOJACLI,"ID. "+SC5->C5_ZLOTCTL,SC6->C6_PRODUTO})
+				lRetorno	:= .F.
+			EndIf
+		EndIf
+	EndIf
+
+	FWRestArea(aAreaSD4)
+Return lRetorno
+
+/*
+	Atualizar LOTE empenho Bobina
+*/
+Static Function ordemProducaoAtualizaEmpenho(oProcess,  nPesoLiquido)
+
+	Local lAjustouEmpenho := .F.
+	Local aArea           := getArea()
+	Local lbobinaValid    := .F.
+
+	oProcess:IncRegua2("Atualizando Empenho")
+
+	DbSelectArea("SD4")
+	SD4->(dbSetOrder(2))
+	If SD4->(DbSeek(FwxFilial("SD4")+AvKey(cOrdemProducao,"D4_OP")))
+
+		While SD4->(!EOF()) .AND. Substr(SD4->D4_OP,1,8) == Substr(cOrdemProducao,1,8)
+
+			If bobinaValid(SD4->D4_COD) .AND. Empty(SD4->D4_LOTECTL)
+
+				If Alltrim(SD4->D4_COD) == Alltrim(cProdBobina) .and. !lbobinaValid
+					lbobinaValid := .T.
+
+					atualizaOPFilha(@oProcess, nPesoLiquido)
+
+					lAjustouEmpenho := alt381Auto(SD4->D4_OP, SD4->D4_COD, SD4->(RECNO()), nPesoLiquido)
+				EndIf
+			EndIf
+
+			SD4->(DbSkip())
+		EndDo
+	EndIf
+
+	RestArea(aArea)
+
+
+	if !lbobinaValid
+		FWAlertWarning(  "Bobina nao localizada na estrutura do produtodo ID: "+cIdBobina+" - "+cProdBobina, cMsgAlerta)
+		Aadd(aErroLog,{3,"Bobina nao localizada na estrutura do produtodo ID: "+cIdBobina+" - "+cProdBobina,"Validacao Dados","","","",""})
+	Endif
+
+
+
+Return lAjustouEmpenho
+
+/*
+	Ajusta empenho
+*/
+Static Function alt381Auto(cNewOrdemProducao, cProduto, nRecno, nPesoLiquido)
+
+	Local aCab       := {}
+	Local aLine      := {}
+	Local aItens     := {}
+	Local aEnder     := {}
+	Local aLineEnder := {}
+	Local nCount     := 0
+	Local nX         := 0
+	Local aAreaSD4	:= SD4->(FWGetArea())
+
+	Local aItensDel	:= {}
+
+	cNewOrdemProducao := PadR(Alltrim(cNewOrdemProducao),Len(SD4->D4_OP))
+
+	SDC->(dbSetOrder(2))
+	SD4->(dbSetOrder(2))
+	SD4->(dbSeek(xFilial("SD4")+cNewOrdemProducao))
+
+	While SD4->(!Eof()) .And. SD4->(D4_FILIAL+D4_OP) == FwxFilial("SD4")+cNewOrdemProducao
+
+		aLine := {}
+		For nX := 1 To SD4->(FCount())
+			If !(RTrim(SD4->(Field(nX))) $ "D4_DTVALID")
+				aAdd(aLine,{SD4->(Field(nX)),SD4->(FieldGet(nX)),Nil})
+			EndIf
+		Next nX
+
+		aAdd(aItensDel, aLine)
+
+		If AllTrim(SD4->D4_COD) == Alltrim(cProduto) .And. Empty(aItens)
+
+			nX := aScan(aLine,{|x| x[1] == "D4_LOTECTL"})
+			If nX > 0
+				aLine[nX,2] := AvKey(cIdBobina,"D4_LOTECTL")
+			EndIf
+
+			If nPesoLiquido > 0 // Para itens peso sempre observar o peso do plano de corte
+				nX := aScan(aLine,{|x| x[1] == "D4_QTDEORI"})
+				If nX > 0
+					aLine[nX,2] := nPesoLiquido
+				EndIf
+
+				nX := aScan(aLine,{|x| x[1] == "D4_QUANT"})
+				If nX > 0
+					aLine[nX,2] := nPesoLiquido
+				EndIf
+			EndIf
+
+			// ENDERECAR
+			If SDC->(dbSeek(xFilial("SDC")+SD4->(D4_COD+D4_LOCAL+D4_OP+D4_TRT+D4_LOTECTL+D4_NUMLOTE)))
+
+				aEnder     := {}
+				aLineEnder := {}
+
+				For nX := 1 To SDC->(FCount())
+					aAdd(aLineEnder,{SDC->(Field(nX)),SDC->(FieldGet(nX)),Nil})
+				Next nX
+
+				aAdd(aLineEnder,{"LINPOS","DC_LOCALIZ+DC_NUMSERI",;
+					SDC->DC_LOCALIZ,;
+					SDC->DC_NUMSERI})
+
+				If !(Alltrim(SDC->DC_LOCALIZ) == Alltrim(cCgcCliente))
+
+					nX := aScan(aLineEnder,{|x| x[1] == "DC_LOCALIZ"})
+					If nX > 0
+						aLineEnder[nX,2] := AvKey(cCgcCliente, "DC_LOCALIZ")
+					EndIf
+
+					aAdd(aEnder,aLineEnder)
+
+				EndIf
+			Else
+
+				aLineEnder := {}
+
+				aAdd(aLineEnder,{"DC_LOCALIZ",AvKey(cCgcCliente, "DC_LOCALIZ"),Nil})
+				aAdd(aLineEnder,{"DC_QUANT"  ,SD4->D4_QUANT     ,Nil})
+
+				aAdd(aEnder,aLineEnder)
+
+			EndIf
+
+			aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+			
+			aAdd(aItens, aLine)
+		EndIf
+
+		SD4->(dbSkip())
+	EndDo
+
+	aCab := {{"D4_OP",cNewOrdemProducao,NIL},;
+		{"INDEX",2,Nil}}
+
+	lMsErroAuto := .F.
+	MSExecAuto({|x,y,z| mata381(x,y,z)},aCab,aItensDel,5)
+
+	// EXCLUIR EMPENHO
+	If lMsErroAuto
+		cLogErro := "Erro ao Excluir Empenho."+CRLF+CRLF
+
+		cLogErro := ''
+		aErroAuto := GetAutoGRLog()
+		For nCount := 1 To Len(aErroAuto)
+			cLogErro += StrTran(StrTran(aErroAuto[nCount], "<", ""), "-", "") + " " + CRLF
+		Next nCount
+
+		Aadd(aErroLog,{3,cLogErro,"Geracao Ordem Produção", cNewOrdemProducao,"ID. "+cIdBobina, SD4->D4_COD})
+
+	EndIf
+
+	// ADICIONAR EMPENHO AJUSTADO
+	If !lMsErroAuto
+
+		aCab   :={{"D4_OP",cNewOrdemProducao,NIL}}
+		aCab   := FwVetByDic( aCab , "SD4" , .F. )
+
+		aItens := FwVetByDic( aItens , "SD4" , .T. )
+
+		MSExecAuto({|x,y,z| mata381(x,y,z)},aCab,aItens,3)
+
+		If lMsErroAuto
+
+			cLogErro := "Erro ao atualizar Empenho."+CRLF+CRLF
+
+			cLogErro := ''
+			aErroAuto := GetAutoGRLog()
+			For nCount := 1 To Len(aErroAuto)
+				cLogErro += StrTran(StrTran(aErroAuto[nCount], "<", ""), "-", "") + " " + CRLF
+			Next nCount
+
+			Aadd(aErroLog,{3,cLogErro,"Geracao Ordem Produção", cNewOrdemProducao,"ID. "+cIdBobina, SD4->D4_COD})
+
+		EndIf
+	EndIf
+
+	FWRestArea(aAreaSD4)
+Return !lMsErroAuto
+
+/*
+	Validar se é bobina
+*/
+Static function bobinaValid(cCodProduto)
+	Local lBobina		:= .F.
+	Local cGruposBobina	:=	GetNewPar("FS_GRPBOBI", "01")
+
+	DbSelectArea("SB1")
+	SB1->(dbSetOrder(1))
+	SB1->(DbSeek(FwxFilial("SB1")+cCodProduto))
+
+	lBobina := IIF(AllTrim(SB1->B1_GRUPO) $ cGruposBobina, .T., .F.)
+Return lBobina
+
+/*/
+	Grava pedido de venda
+/*/
+Static Function gravaPedido()
+	Local lRet				:= .T.		as logical
+	Local aAutoCab			:= {}		as array
+	Local aAutoItens		:= {}		as array
+	Local cError			:= ""		as character
+	Local bError			:= {|| }	as codeblock
+
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .F.
+	Private lAutoErrNoFile := .F.
+
+	SetModulo("SIGAFAT","FAT")
+
+	Begin Sequence
+
+		lRet		:= .T.
+		cError 		:= ""
+		bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+		aAutoCab	:= getAutoCab("P")
+		aAutoItens 	:= getAutoItens("P")
+		If Len(aAutoItens) > 0
+
+			MsExecAuto( {|x,y,z| MATA410(x,y,z) } , aAutoCab, aAutoItens, 3 )
+
+		Endif
+
+	End Sequence
+
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		cMsgProcesso := "Erro ao gerar o pedido de venda." + CRLF + cError
+		lRet := .F.
+		Aadd(aErroLog,{3,cMsgProcesso, "Geração Pedido Venda",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,"ID. "+(cAliasCab)->C5_ZLOTCTL})
+	Else
+		If ( lMsErroAuto )
+			cMsg := "Erro ao gerar pedido de venda"+CRLF
+			cMsg += Mostraerro()
+			lRet := .F.
+			Aadd(aErroLog,{3,cMsg,"Geração Pedido Venda",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,"ID. "+(cAliasCab)->C5_ZLOTCTL})
+		Else
+			lRet := .T.
+			cNumeroPedido := SC5->C5_NUM
+			cIdBobina := SC5->C5_ZLOTCTL
+		EndIf
+	Endif
+
+	SetModulo("SIGA"+cModulo,cModulo)
+
+Return lRet
+
+/*
+	Monta o Cabeçalho da Rotina Automática
+*/
+Static Function getAutoCab(cOpcao)
+	Local aAutoCab         := {}
+	Local aArea            := GetArea()
+	Local nQuantidadeOrdem := 0
+	Local lPCPREVATU   := FindFunction('PCPREVATU')  .AND.  SuperGetMv("MV_REVFIL",.F.,.F.)
+	// Local cQuery   := ""
+	// Local cC2_REVI := ""
+	// Local cQryTmp  := ""
+
+	If ( cOpcao == "P")
+		aadd(aAutoCab, {"C5_FILIAL" , FWxFilial("SC5")       , NIL})
+		aadd(aAutoCab, {"C5_CLIENTE", (cAliasCab)->C5_CLIENTE, NIL})
+		aadd(aAutoCab, {"C5_LOJACLI", (cAliasCab)->C5_LOJACLI, NIL})
+		aadd(aAutoCab, {"C5_LOJAENT", (cAliasCab)->C5_LOJACLI, NIL})
+		aadd(aAutoCab, {"C5_ZENTREG", (cAliasCab)->C5_ZENTREG, NIL})
+		aadd(aAutoCab, {"C5_TIPO"   , "N"                    , NIL})
+		aadd(aAutoCab, {"C5_EMISSAO", dDatabase              , NIL})
+		aadd(aAutoCab, {"C5_ZINSPE" , (cAliasCab)->C5_ZINSPE , NIL})
+		aadd(aAutoCab, {"C5_ZLOTCTL", (cAliasCab)->C5_ZLOTCTL, NIL})
+		aadd(aAutoCab, {"C5_ZOBS "  , (cAliasCab)->C5_ZOBS   , NIL})
+	Else
+		// cQuery := "SELECT MAX(QP6_REVI) REVISAO "+CRLF
+		// cQuery += " FROM "+RetSqlTab("QP6") + " " + CRLF
+		// cQuery += "	WHERE 1=1 "+CRLF
+		// cQuery += "		AND " + RetSqlFil("QP6")+" "+CRLF
+		// cQuery += "		AND " + RetSqlDel("QP6")+" "+CRLF
+		// cQuery += "		AND QP6_PRODUT = "+ValToSql(SC6->C6_PRODUTO)+" "+CRLF
+
+		// cQryTmp := MPSysOpenQuery( cQuery )
+
+		// cC2_REVI := (cQryTmp)->(REVISAO)
+
+		DbSelectArea("SB1")
+		SB1->(DbSetOrder(1))
+		If SB1->(DbSeek(FwxFilial("SB1")+SC6->C6_PRODUTO ))
+			cRevisao := IIF(lPCPREVATU , PCPREVATU(SB1->B1_COD), SB1->B1_REVATU )
+			If (SB1->B1_UM $ "KG|TL")
+				If  SC6->C6_ZPESO > 0
+					nQuantidadeOrdem := SC6->C6_ZPESO // Para itens peso sempre observar o peso do plano de corte
+				Endif
+			EndIf
+		EndIf
+
+		If nQuantidadeOrdem == 0
+			nQuantidadeOrdem := SC6->C6_QTDVEN
+		EndIf
+		dbSelectArea('SC2')
+		dbSetOrder(1)
+		SC2->(dbseek(xfilial('SC2')+SC6->C6_NUM +SC6->C6_ITEM ,.T. ))
+		aadd(aAutoCab, {"C2_FILIAL" , FwxFilial("SC2")                                 , NIL})
+		aadd(aAutoCab, {"C2_NUM"    , SC6->C6_NUM                                      , ".T."})
+		aadd(aAutoCab, {"C2_ITEM"   , strzero(val(SC6->C6_ITEM),TamSx3( "C2_ITEM" )[1]), ".T."})
+		aadd(aAutoCab, {"C2_SEQUEN" , "001"                                            , ".T."})
+		aadd(aAutoCab, {"C2_PRODUTO", SC6->C6_PRODUTO                                  , NIL})
+		aadd(aAutoCab, {"C2_OBS"    , "PLANO CORTE BOBINA: "+cIdBobina                 , NIL})
+		aadd(aAutoCab, {"C2_PEDIDO" , SC6->C6_NUM                                      , NIL})
+		aadd(aAutoCab, {"C2_ITEMPV" , SC6->C6_ITEM                                     , NIL})
+		aadd(aAutoCab, {"C2_QUANT"  , nQuantidadeOrdem                                 , NIL})
+		aadd(aAutoCab, {"C2_STATUS" , "N"                                              , NIL})
+		aadd(aAutoCab, {"C2_LOCAL"  , SC6->C6_LOCAL                                    , NIL})
+		aadd(aAutoCab, {"C2_PRIOR"  , "500"                                            , NIL})
+		aadd(aAutoCab, {"C2_DATPRI" , DDATABASE                                        , NIL})
+		aadd(aAutoCab, {"C2_DATPRF" , SC6->C6_ENTREG                                   , NIL})
+		aadd(aAutoCab, {"C2_LINHA"  , SC6->C6_PEDCLI                                   , NIL})
+		aadd(aAutoCab, {"C2_ZOBS"   , SC6->C6_ZOBS                                     , NIL})
+		aadd(aAutoCab, {'C2_REVISAO', cRevisao                                         , Nil})
+		// aadd(aAutoCab, {"C2_REV" , cC2_REVI 		 , NIL})
+
+		aadd(aAutoCab, {"C2_VERIFI" , 1 			 , NIL})
+		aadd(aAutoCab, {"AUTEXPLODE", "S"            , NIL})
+
+	Endif
+
+	RestArea(aArea)
+
+Return aAutoCab
+
+/*
+	Recupera os Campos dos Itens da Rotina Automática
+*/
+Static Function getAutoItens(cOpcao)
+	Local aRecord			:= {}		as array
+	Local nItem				:= 0		as numeric
+	Local aLoteCtl			:= {}		as array
+	Local aAutoItens		:= {}		as array
+
+	dbSelectArea("SB1")
+	SB1->(dbSetOrder(1))
+
+	dbSelectArea(cAliasItem)
+	(cAliasItem)->(dbGotop())
+	(cAliasItem)->(dbSeek((cAliasCab)->C5_ZLOTCTL))
+	While ( !(cAliasItem)->(eof()) ) .And. ( (cAliasItem)->C6_ZLOTCTL == (cAliasCab)->C5_ZLOTCTL )
+		nItem 	:= nItem + 1
+		aRecord	:= {}
+
+		//If (cAliasItem)->C6_VALOR == 0
+			nTotalItem := Round( (cAliasItem)->QT_SISTEMA * (cAliasItem)->C6_PRCVEN, 2 )
+		/*Else
+			nTotalItem := (cAliasItem)->C6_VALOR
+		EndIf*/
+
+		aadd(aRecord, {"C6_PRODUTO", (cAliasItem)->C6_PRODUTO, NIL})
+		aadd(aRecord, {"C6_QTDVEN" , (cAliasItem)->QT_SISTEMA, NIL})
+		aadd(aRecord, {"C6_ZQTDPLC", (cAliasItem)->QTD_PLANO , NIL})
+		aadd(aRecord, {"C6_ZPESO"  , (cAliasItem)->PESO_PLANO, NIL})
+		aadd(aRecord, {"C6_QTDLIB" , (cAliasItem)->C6_QTDLIB , NIL})
+		aadd(aRecord, {"C6_PRCVEN" , (cAliasItem)->C6_PRCVEN , NIL})
+		aadd(aRecord, {"C6_PRUNIT" , (cAliasItem)->C6_PRCVEN , NIL})
+		aadd(aRecord, {"C6_VALOR"  , nTotalItem              , NIL})
+		aadd(aRecord, {"C6_OPER"   , (cAliasItem)->C6_OPER   , NIL})
+		aadd(aRecord, {"C6_TES"    , (cAliasItem)->C6_TES    , NIL})
+		aadd(aRecord, {"C6_ENTREG" , (cAliasItem)->C6_ENTREG , NIL})
+		aadd(aRecord, {"C6_NUMPCOM", (cAliasItem)->C6_NUMPCOM, NIL})
+		aadd(aRecord, {"C6_ITEMPC" , (cAliasItem)->C6_ITEMPC , NIL})
+		aadd(aRecord, {"C6_PEDCLI" , (cAliasItem)->C2_LINHA  , NIL})
+		aadd(aRecord, {"C6_ZOBS"   , (cAliasItem)->C5_ZOBS   , NIL})
+		aadd(aRecord, {"C6_ZENTREG"   , (cAliasItem)->C6_ZENTREG   , NIL})
+
+
+		// Futura melhoria buscar LOCAL do Recurso pela LINHA
+		aadd(aRecord, {"C6_LOCAL"  , (cAliasItem)->C6_LOCAL  , NIL})
+
+		If ( !Empty((cAliasItem)->C6_NFORI ) )
+			aAdd( aRecord, { "C6_NFORI"     , (cAliasItem)->C6_NFORI  	, NIL})
+			aAdd( aRecord, { "C6_SERIORI"	, (cAliasItem)->C6_SERIORI 	, NIL})
+			aAdd( aRecord, { "C6_ITEMORI"	, (cAliasItem)->C6_ITEMORI	, NIL})
+			aAdd( aRecord, { "C6_IDENTB6"	, (cAliasItem)->C6_IDENTB6	, NIL})
+		Else
+			// Não tem LOTE no plano de corte
+			// aLoteCtl := verificarLoteCtl()
+			If ( Len(aLoteCtl) > 0)
+				aAdd( aRecord, { "C6_LOTECTL"	, aLoteCtl[1]				, NIL})
+				aAdd( aRecord, { "C6_DTVALID"	, aLoteCtl[2]				, NIL})
+				aAdd( aRecord, { "C6_LOCALIZ"	, aLoteCtl[3]				, NIL})
+			Endif
+		Endif
+
+		aAdd(aAutoItens,aRecord)
+		(cAliasItem)->(dbSkip())
+	Enddo
+
+Return aAutoItens
+
+/*/
+	Verificar lote do produto
+/*/
+Static Function verificarLoteCtl()
+	Local aRet				:= {}		as array
+	Local cLoteFornece		:= ""		as character
+	Local cCodProduto		:= ""		as character
+	Local aAreaSb8			:= SB8->(GetArea())
+
+	cLoteFornece	:= AvKey((cAliasCab)->C5_ZLOTCTL,"B8_LOTEFOR")
+	cCodProduto		:= AvKey((cAliasItem)->C6_PRODUTO,"B8_PRODUTO")
+
+	dbSelectArea("SB8")
+	SB8->(dbSetorder(4))
+
+	dbSelectArea("SBF")
+	SBF->(dbSetorder(2))
+
+	If ( SB8->(dbSeek(FWxFilial("SB8")+cLoteFornece+cCodProduto)))
+		If ( SBF->(dbSeek(FWxFilial("SBF")+SB8->B8_PRODUTO+SB8->B8_LOCAL+SB8->B8_LOTECTL)))
+			Aadd(aRet,SB8->B8_LOTECTL)
+			Aadd(aRet,SB8->B8_DTVALID)
+			Aadd(aRet,SBF->BF_LOCALIZ)
+		Endif
+	Endif
+	RestArea(aAreaSb8)
+Return aRet
+
+/*/
+	Verifica nota de origem
+/*/
+Static Function verificaNfOrigem(cIdBobina, cInspCliente)
+	Local aRet             := {}       as array
+	Local nSaldo           := 0        as numeric
+	Local lContinuaProcura := .F.      as logical
+	Local cNotaOrigem      := ""       as character
+	Local aDadosLote       := array(6) as array
+	Local aAreaSD1		   := {}		as array
+	local cAliasLote       := GetNextAlias()
+	Local cQuery			:= ""	as character
+
+
+	If Empty(cIdBobina)
+		Return aRet
+	EndIf
+
+	cIdBobina		:= AvKey(cIdBobina,"B8_LOTECTL")
+	cInspCliente	:= AvKey(cInspCliente,"B8_LOTEFOR")
+
+	cQuery := 	queryBuscarLote(cIdBobina, cInspCliente)
+
+	//	MPSysOpenQuery( cQuery, cAliasLote := GetNextAlias() )
+	cQuery := ChangeQuery( cQuery )
+
+	dbUseArea( .T., "TOPCONN", TcGenQry( , , cQuery ),cAliasLote, .F., .T. )
+
+	(cAliasLote)->(DbGoTop())
+	If (cAliasLote)->(!EoF())
+		nSaldo := (cAliasLote)->B8_SALDO - ((cAliasLote)->B8_QACLASS + (cAliasLote)->B8_QEMPPRE)
+
+		If nSaldo == 0
+			lContinuaProcura := .F.
+
+			FWAlertWarning("Não existe saldo da bobina: "+cIdBobina+" / Inspeção "+cInspCliente, cMsgAlerta)
+			Aadd(aErroLog,{3,"Não existe saldo da bobina: "+cIdBobina+" / Inspeção "+cInspCliente,"Validacao Dados","","","",""})
+			Aadd(aRet,"XXX")
+		Else
+			aDadosLote[1] := (cAliasLote)->B8_DOC
+			aDadosLote[2] := (cAliasLote)->B8_SERIE
+			aDadosLote[3] := (cAliasLote)->B8_CLIFOR
+			aDadosLote[4] := (cAliasLote)->B8_LOJA
+			aDadosLote[5] := (cAliasLote)->B8_PRODUTO
+			aDadosLote[6] := (cAliasLote)->B8_SALDO - ((cAliasLote)->B8_QACLASS + (cAliasLote)->B8_EMPENHO)
+
+			lContinuaProcura := .T.
+		EndIf
+	Else
+		lContinuaProcura := .F.
+
+		FWAlertError("O Lote informado "+cIdBobina+" / Inspeção "+cInspCliente+" não existe", "Atenção")
+		Aadd(aErroLog,{3,"O Lote informado "+cIdBobina+" / Inspeção "+cInspCliente+" não existe","Validacao Dados","","","",""})
+		Aadd(aRet,"XXX")
+	EndIf
+
+	(cAliasLote)->(DbCloseArea())
+
+	If lContinuaProcura
+
+		DbSelectArea("SD1")
+		SD1->(dbSetOrder(11)) // D1_FILIAL+D1_DOC+D1_SERIE+D1_FORNECE+D1_LOJA+D1_COD+D1_LOTECTL+D1_NUMLOTE+DTOS(D1_DTVALID)
+		If ( SD1->(dbSeek(FWxFilial("SD1")+aDadosLote[1]+aDadosLote[2]+aDadosLote[3]+aDadosLote[4]+aDadosLote[5]+cIdBobina)))
+
+			aAreaSD1 := SD1->(GetArea())
+			cNotaOrigem := SD1->D1_DOC
+
+			DbSelectArea("SDH")
+			SDH->(dbSetOrder(1))
+			If SDH->(DbSeek(FwxFilial("SDH")+SD1->D1_NUMSEQ))
+
+				cFilialSDH  := SDH->DH_FILIAL
+				cSdocSDH    := SDH->DH_SERIE
+				cDocSDH     := SDH->DH_DOC
+				cItemSDH    := SDH->DH_ITEM
+				cClienteSDH := SDH->DH_CLIENTE
+				cLojaCliSDH := SDH->DH_LOJACLI
+
+				SDH->(dbSetOrder(2)) // DH_FILIAL+DH_TPMOV+DH_SERIE+DH_DOC+DH_ITEM+DH_CLIENTE+DH_LOJACLI+DH_FORNECE+DH_LOJAFOR+DH_OPER+DH_IDENTNF+DH_ITEMCOB
+				SDH->(dbGotop())
+				If SDH->(DbSeek(cFilialSDH+AvKey("2","DH_TPMOV")+AvKey(cSdocSDH,"DH_SERIE")+AvKey(cDocSDH,"DH_DOC")+AvKey(cItemSDH,"DH_ITEM")+AvKey(cClienteSDH,"DH_CLIENTE")+AvKey(cLojaCliSDH,"DH_LOJACLI")))
+
+					// Dados 4a Nota
+
+					SD1->(dbSetOrder(4))
+					If SD1->(DbSeek(FwxFilial("SD1")+SDH->DH_IDENTNF))
+
+						cNotaOrigem := SD1->D1_DOC
+
+						nSaldo := SD1->D1_QUANT - SD1->D1_QTDEDEV
+						If ( nSaldo > 0)
+
+							Aadd(aRet,SD1->D1_DOC)
+							Aadd(aRet,SD1->D1_SERIE)
+							Aadd(aRet,SD1->D1_ITEM)
+							Aadd(aRet,nSaldo)
+							Aadd(aRet,SD1->D1_VUNIT)
+							Aadd(aRet,SD1->D1_NUMSEQ)
+							Aadd(aRet,SD1->D1_COD)
+							Aadd(aRet,"B") // Beneficiamento
+							Aadd(aRet,SD1->D1_FORNECE)
+							Aadd(aRet,SD1->D1_LOJA)
+							Aadd(aRet,aDadosLote[6])
+							Aadd(aRet,SD1->D1_TES)
+							Aadd(aRet,SD1->D1_LOCAL)
+							Aadd(aRet,SD1->D1_TOTAL)
+
+						Else
+
+							MsgAlert("Não existe saldo da nota fiscal de cobertura"+cNotaOrigem, cMsgAlerta)
+							Aadd(aErroLog,{3,"Não existe saldo da nota fiscal de cobertura"+cNotaOrigem,"Validacao Dados","","","",""})
+
+						EndIf
+
+					Else
+						MsgAlert("Nota fiscal de cobertura não localizada!"+cNotaOrigem, cMsgAlerta)
+						Aadd(aErroLog,{3,"Nota fiscal de cobertura não localizada!"+cNotaOrigem,"Validacao Dados","","","",""})
+					EndIf
+
+				Else
+
+					// Dados NF Industria
+					RestArea(aAreaSD1)
+
+					nSaldo := SD1->D1_QUANT - SD1->D1_QTDEDEV
+					If ( nSaldo > 0)
+						Aadd(aRet,SD1->D1_DOC)
+						Aadd(aRet,SD1->D1_SERIE)
+						Aadd(aRet,SD1->D1_ITEM)
+						Aadd(aRet,nSaldo)
+						Aadd(aRet,SD1->D1_VUNIT)
+						Aadd(aRet,SD1->D1_NUMSEQ)
+						Aadd(aRet,SD1->D1_COD)
+						Aadd(aRet,"I") // Industria
+						Aadd(aRet,SD1->D1_FORNECE)
+						Aadd(aRet,SD1->D1_LOJA)
+						Aadd(aRet,aDadosLote[6])
+						Aadd(aRet,SD1->D1_TES)
+						Aadd(aRet,SD1->D1_LOCAL)
+						Aadd(aRet,SD1->D1_TOTAL)
+
+					Else
+						MsgAlert("Não existe saldo da nota fiscal de origem '"+cNotaOrigem, cMsgAlerta)
+						Aadd(aErroLog,{3,"Não existe saldo da nota fiscal de origem '"+cNotaOrigem,"Validacao Dados","","","",""})
+					Endif
+
+				EndIf
+			Else
+
+				cNotaOrigem := SD1->D1_DOC
+
+				nSaldo := SD1->D1_QUANT - SD1->D1_QTDEDEV
+				If ( nSaldo > 0)
+
+					Aadd(aRet,SD1->D1_DOC)
+					Aadd(aRet,SD1->D1_SERIE)
+					Aadd(aRet,SD1->D1_ITEM)
+					Aadd(aRet,nSaldo)
+					Aadd(aRet,SD1->D1_VUNIT)
+					Aadd(aRet,SD1->D1_NUMSEQ)
+					Aadd(aRet,SD1->D1_COD)
+					Aadd(aRet,"B") // Beneficiamento
+					Aadd(aRet,SD1->D1_FORNECE)
+					Aadd(aRet,SD1->D1_LOJA)
+					Aadd(aRet,aDadosLote[6])
+					Aadd(aRet,SD1->D1_TES)
+					Aadd(aRet,SD1->D1_LOCAL)
+					Aadd(aRet,SD1->D1_TOTAL)
+
+				Else
+					MsgAlert("Não existe saldo da nota fiscal de cobertura"+cNotaOrigem, cMsgAlerta)
+				Endif
+
+			EndIf
+		Else
+			MsgAlert("Nota fiscal de origem '"+cNotaOrigem+"' não foi encontrado! Adotaremos procedimento faturamento antecipado.", cMsgAlerta)
+		Endif
+	EndIf
+
+Return aRet
+
+/*
+	Query do lote SB8
+*/
+Static Function queryBuscarLote(cIdBobina, cInspecaoCliente)
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        * "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SB8") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SD1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    D1_FILIAL		= B8_FILIAL " + CRLF
+	cQuery += " 	    AND D1_DOC		= B8_DOC " + CRLF
+	cQuery += " 	    AND D1_SERIE	= B8_SERIE " + CRLF
+	cQuery += " 	    AND D1_FORNECE	= B8_CLIFOR " + CRLF
+	cQuery += " 	    AND D1_LOJA		= B8_LOJA " + CRLF
+	cQuery += " 	    AND D1_COD		= B8_PRODUTO " + CRLF
+	cQuery += " 	    AND D1_LOTECTL	= B8_LOTECTL " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
+	cQuery += " 		AND B8_LOTECTL  = '"+AllTrim(cIdBobina)+"'" + CRLF
+	cQuery += " 		AND B8_LOTEFOR  = '"+AllTrim(cInspecaoCliente)+"'" + CRLF
+	cQuery += " 		AND B8_ORIGLAN  = 'NF'" + CRLF
+	cQuery += " 		AND B8_LOCAL  NOT LIKE 'Z%'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
+
+	cQuery += " ORDER BY SB8.R_E_C_N_O_ DESC"
+Return cQuery
+
+/*/
+	Retornoar descricao do erro
+/*/
+Static Function getErrorBlock(oError,cErro)
+
+	cErro := oError:Description + oError:ErrorStack
+
+Return
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+	Local cTitulo		:= ""	as character
+
+	cTitulo := "Importacao Plano de Corte"
+
+	AADD(aDadosCampos,{"TITERRO" 	,"Erro"			,"C",060,00,""})
+	AADD(aDadosCampos,{"C5_CLIENTE" ,"Cliente"		,"C",008,00,""})
+	AADD(aDadosCampos,{"C5_LOJA" 	,"Loja"		    ,"C",004,00,""})
+	AADD(aDadosCampos,{"C5_ZLOTCTL"	,"Inspencao"    ,"C",020,00,""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return
+
+/*/
+	Busca preco unitatio
+/*/
+Static Function buscaPrecoUnitario(cCodigoProduto)
+	Local cRet			:= "0"	as character
+	Local cCodCliente	:= ""	as character
+	Local cLojCliente	:= ""	as character
+	Local cTabelaPreco	:= ""	as character
+	Local cMsg			:= ""	as character
+	Local aAreas		:= {}	as array
+
+	aAreas 		:= Lj7GetArea({"SA1","DA1"})
+	cCodCliente	:= AvKey((cAliasCab)->C5_CLIENT,"A1_COD")
+	cLojCliente	:= AvKey((cAliasCab)->C5_LOJACLI,"C5_LOJACLI")
+
+	dbSelectArea("SA1")
+	SA1->(dbSetOrder(1))
+
+	dbSelectArea("DA1")
+	DA1->(dbSetOrder(1))
+
+	If ( SA1->(dbSeek(FWxFilial("SA1")+cCodCliente+cLojCliente)) )
+		If !( Empty(SA1->A1_TABELA) )
+			cTabelaPreco := AvKey(SA1->A1_TABELA,"DA1_CODTAB")
+			If ( DA1->(dbSeek(FWxFilial("DA1")+cTabelaPreco+cCodigoProduto)))
+				If ( DA1->DA1_PRCVEN == 0)
+					cMsg := "Preço unitário não informado na planilha."+CRLF+"Preço unitario não informado no cadastrado."
+					Aadd(aErroLog,{3,cMsg,"Preço Unitário",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,(cAliasCab)->C5_ZLOTCTL,""})
+					Return "0"
+				Else
+					cRet := Alltrim(Str(DA1->DA1_PRCVEN))
+				Endif
+			Else
+				cMsg := "Preço unitário não informado na planilha."+CRLF+"Tabela de preço não cadastrada."
+				Aadd(aErroLog,{3,cMsg,"Preço Unitário",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,(cAliasCab)->C5_ZLOTCTL,""})
+				Return "0"
+			Endif
+		Else
+			cMsg := "Preço unitário não informado na planilha."+CRLF+"Não existe tabela de preço cadastrado para cliente"
+			Aadd(aErroLog,{3,cMsg,"Preço Unitário",(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,(cAliasCab)->C5_ZLOTCTL,""})
+			Return "0"
+		Endif
+	Endif
+
+	Lj7RestArea(aAreas)
+
+Return cRet

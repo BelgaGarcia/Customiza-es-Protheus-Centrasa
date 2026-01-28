@@ -1,0 +1,46 @@
+#include "totvs.ch"
+#include "topconn.ch"
+
+namespace compras.funcao
+
+/*/ {Protheus.doc} Completarzero
+
+Função para complementar zero a esquerda no documento de entrada
+
+@type function
+@author Elcilei Lopes - DSM
+@since 04/09/2024
+@version P12
+
+@Obs : Função será chamada no campo F1_DOC no campo X3_VLDUSER
+
+@See : https://centraldeatendimento.totvs.com/hc/pt-br/articles/360020161472-Cross-Segmentos-Totvs-Backoffice-Protheus-SIGACOM-Exemplo-customizado-de-como-preencher-o-campo-de-N%C3%BAmero-do-Documento-com-zeros-a-esquerda-ap%C3%B3s-digita%C3%A7%C3%A3o
+/*/
+User Function Completarzero()
+	Local cDocumento	:= ""	as character
+	Local cNewDocumento	:= ""	as character
+
+	If ( !Empty(M->F1_DOC) .Or. ( Type("cNFiscal") == "C" .And. !Empty(cNFiscal) ) )
+
+		If ( !Empty(M->F1_DOC) )
+			cDocumento := M->F1_DOC
+		ElseIf ( Type("cNFiscal") == "C" .And. !Empty(cNFiscal) )
+			cDocumento := cNFiscal
+		Else
+			cDocumento := Space(9)
+		EndIf
+
+		If ( IsDigit(cDocumento) )
+			cNewDocumento	:= StrZero(Val(cDocumento),9)
+		Else
+			cNewDocumento	:= StrZero(0,9)
+		EndIf
+		M->F1_DOC 		:= cNewDocumento
+
+		If ( Type("cNFiscal") == "C" )
+			cNFiscal := cNewDocumento
+		EndIf
+
+	Endif
+
+Return .T.

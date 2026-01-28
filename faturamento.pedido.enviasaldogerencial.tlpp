@@ -1,0 +1,235 @@
+#include "totvs.ch"
+
+namespace faturamento.pedido
+
+/*/{Protheus.doc} Enviasaldogerencial
+
+Enviar o saldo faturado do cliente
+SOLUÇÕES USIMINAS para o estoque gerencial
+
+@type function
+@author	Elcilei Lopes - DSM
+@since 24/10/2024
+@version P12
+@database MSSQL,Oracle
+/*/
+User Function Enviasaldogerencial()
+	Local lContinua         := .T.  as logical
+	Local aAutoCab		    := {}	as array
+	Local aAutoItens	    := {}	as array
+	Local aAreas			:= {}	as array
+	Local aErroMSAuto		:= {}	as array
+	Local nRecAuto			:= 0 	as numeric
+
+	Private lMsErroAuto		:= .F.	as logical
+	Private lMsHelpAuto		:= .T.	as logical
+	Private lAutoErrNoFile	:= .T.	as logical
+	Private aErroLog		:= {}	as array
+	Private cClienteGer     := ""   as character
+	Private cLojaCliGer     := ""   as character
+	Private cClientePadrao  := ""   as character
+	Private aClientePadrao  := {}   as array
+	Private cNumDocumento   := ""   as character
+	Private cSerie          := ""   as character
+	Private cNumPedido		:= ""   as character
+	Private cLoteFornece	:= ""   as character
+	Private lValidaLotFor	:= .F.	as logical
+
+	aAreas			:= Lj7GetArea({"SC5","SC6","SF2","SD2"})
+
+	cClientePadrao  := GetNewPar("ZM_CLIEGER","")
+	aClientePadrao  := StrTokArr(Alltrim(cClientePadrao ),"-")
+
+	cClienteGer     := aClientePadrao[1]
+	cLojaCliGer     := aClientePadrao[2]
+	cNumPedido		:= SC5->C5_NUM
+	cLoteFornece	:= SC5->C5_ZINSPE
+
+	buscaNumeroNota(@cNumDocumento,@cSerie,cNumPedido)
+
+	lContinua		:= podeExecutar()
+
+	If ( lContinua == .F.)
+		Return
+	Endif
+
+	aAutoCab	    := getAutoCab()
+	aAutoItens 	    := getAutoItens()
+
+	If ( Len(aAutoItens) > 0 )
+
+		MSExecAuto({|x,y,z| MATA103(x,y,z)},aAutoCab,aAutoItens,3)
+
+		If ( lMsErroAuto )
+			cMsg 		:= "Erro ao realizar ao gerar movimento estoque gerencial."+CRLF+CRLF
+			aErroMSAuto := GetAutoGRLog()
+			For nRecAuto := 1 To Len(aErroMSAuto)
+				cMsg += aErroMSAuto[nRecAuto] + CRLF
+			Next
+			Aadd(aErroLog,{3,cMsg,"Saldo Nota Gerencial",cNumDocumento,cSerie,cClienteGer,cLojaCliGer,dDatabase})
+			errosLogs()
+		Endif
+
+		lRet := .F.
+	Endif
+
+	Lj7RestArea(aAreas)
+
+Return lRet
+
+
+/*
+	Monta o Cabeçalho da Rotina Automática
+*/
+Static Function getAutoCab()
+	Local aAutoCab 		    := {}	as array
+
+	If Len(aClientePadrao) >= 2
+
+		aAdd( aAutoCab, { "F1_FILIAL"	, FWxFilial("SF1")		, Nil } )
+		aAdd( aAutoCab, { "F1_TIPO"		, "B"       			, Nil } )
+		aAdd( aAutoCab, { "F1_FORMUL"	, "N"					, Nil } )
+		aAdd( aAutoCab, { "F1_DOC"		, cNumDocumento	    	, Nil } )
+		aAdd( aAutoCab, { "F1_SERIE"	, cSerie	    		, Nil } )
+		aAdd( aAutoCab, { "F1_DTDIGIT"	, dDatabase				, Nil } )
+		aAdd( aAutoCab, { "F1_ESPECIE"	, "GER"    				, Nil } )
+		aAdd( aAutoCab, { "F1_FORNECE"	, cClienteGer    		, Nil } )
+		aAdd( aAutoCab, { "F1_LOJA"		, cLojaCliGer			, Nil } )
+		aAdd( aAutoCab, { "F1_EMISSAO"	, dDatabase				, Nil } )
+	Endif
+
+Return aAutoCab
+
+/*
+	Recupera os Campos dos Itens da Rotina Automática
+*/
+Static Function getAutoItens()
+	Local aRecord		:= {}	as array
+	Local aAutoItens	:= {}	as array
+	Local cTesGer		:= ""	as character
+	Local cArmazem		:= ""	as character
+	Local cTipoOper   	:= ""	as character
+
+	Local nItemNf		:= 0 	as numeric
+
+	cTesGer		:= GetNewPar("ZM_TESGERP","071")
+	cArmazem	:= GetNewPar("ZM_ARMGERP","ZZ")
+	cTipoOper	:= GetNewPar("ZM_TPOGERP","")
+
+	dbSelectArea("SC6")
+	SC6->(dbSetOrder(1))
+
+	If ( SC6->(dbSeek(FWxFilial("SC6")+cNumPedido)) )
+		While ( !SC6->(eof()) ) .And. ( SC6->C6_FILIAL == FWxFilial("SC6")) .And. ( SC6->C6_NUM == cNumPedido)
+
+			if ( SC6->C6_ZSLDGER == "S")
+
+				nItemNf		:= nItemNf + 1
+				aRecord 	:= {}
+
+				aAdd( aRecord, { "D1_ITEM"		,	StrZero(nItemNf,4)	, NIL})
+				aAdd( aRecord, { "D1_COD"		,	SC6->C6_PRODUTO 	, NIL})
+				aAdd( aRecord, { "D1_QUANT"		,	SC6->C6_QTDVEN		, NIL})
+				aAdd( aRecord, { "D1_VUNIT"		,	SC6->C6_PRCVEN 	, NIL})
+				aAdd( aRecord, { "D1_TOTAL"		,	Round(SC6->C6_PRCVEN * SC6->C6_QTDVEN, 2), NIL})
+				If !Empty(cTesGer)
+					aAdd( aRecord, { "D1_TES"	,	cTesGer   		, NIL})
+				Endif
+				If !Empty(cArmazem)
+					aAdd( aRecord, { "D1_LOCAL"	,	cArmazem  		, NIL})
+				Endif
+
+				If !Empty(cTipoOper)
+					aAdd( aRecord, { "D1_OPER"	,	cTipoOper  		, NIL})
+				Endif
+
+				If !Empty(SC6->C6_LOTECTL)
+					aAdd( aRecord, { "D1_LOTECTL"	,	SC6->C6_LOTECTL	, NIL})
+				Endif
+
+				If !Empty(Dtos(SC6->C6_DTVALID))
+					aAdd( aRecord, { "D1_DTVALID"	,	SC6->C6_DTVALID	, NIL})
+				Endif
+
+				If !Empty(cLoteFornece)
+					aAdd( aRecord, { "D1_LOTEFOR"	,	cLoteFornece		, NIL})
+				Endif
+
+				aAdd(aAutoItens,aRecord)
+
+			Endif
+			SC6->(dbSkip())
+		Enddo
+	Endif
+
+Return aAutoItens
+
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+	Local cTitulo		:= ""	as character
+
+	cTitulo := "Geracão Saldo Gerencial"
+
+	AADD(aDadosCampos,{"TITERRO" 	,"Erro"			,"C",030,00,""})
+	AADD(aDadosCampos,{"F1_DOC" 	,"No.Documento"	,"C",009,00,""})
+	AADD(aDadosCampos,{"F1_SERIE" 	,"Serie"		,"C",003,00,""})
+	AADD(aDadosCampos,{"F1_FORNECE"	,"Forncedor"    ,"C",008,00,""})
+	AADD(aDadosCampos,{"F1_LOJA"	,"Loja"    		,"C",004,00,""})
+	AADD(aDadosCampos,{"F1_EMISSAO"	,"Emissao"    	,"D",008,00,""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return
+
+/*/
+	Validar se pode gerar documento de entrada
+/*/
+Static Function podeExecutar()
+	Local lRet			:= .T.								as logical
+	Local cDocEntrada	:= AvKey(cNumDocumento,"F1_DOC")	as character
+	Local cSerEntrada	:= AvKey(cSerie,"F1_SERIE")			as character
+	Local cForEntrada	:= AvKey(cClienteGer,"F1_FORNECE")	as character
+	Local cLojEntrada	:= AvKey(cLojaCliGer,"F1_LOJA")		as character
+
+	dbSelectArea("SC6")
+	SC6->(dbSetOrder(1))
+
+	If ( SC6->(dbSeek(FWxFilial("SC6")+cNumPedido)) ) 
+		lRet := .F.
+		While ( !SC6->(eof()) ) .And. ( SC6->C6_FILIAL == FWxFilial("SC6")) .And. ( SC6->C6_NUM == cNumPedido)
+			if ( SC6->C6_ZSLDGER == "S")
+				lRet := .T.
+			endif
+			SC6->(dbSkip())
+		Enddo
+	Endif
+
+	dbSelectArea("SF1")
+	SF1->(dbSetOrder(1))
+	If ( lRet == .T.) .And. ( SF1->(dbSeek(FwxFilial("SF1")+cDocEntrada+cSerEntrada+cForEntrada+cLojEntrada)))
+		FWAlertHelp("Não será possivel gerar o documento de entrada gerencial, Numero documento já existe para cliente.", "Verificar o processo.")
+		Return .F.
+	Endif
+
+Return lRet
+
+/*/
+	Bucar numero da nota fiscal
+/*/
+Static Function buscaNumeroNota(cNumDocumento,cSerie,cNumPedido)
+
+	Default cNumPedido	:= ""
+
+	dbSelectArea("SD2")
+	SD2->(dbSetOrder(8))
+
+	If ( !Empty(cNumPedido) ) .And. ( SD2->(dbSeek(FwxFilial("SD2")+cNumPedido)) )
+		cNumDocumento	:= SD2->D2_DOC
+		cSerie			:= SD2->D2_SERIE
+	Endif
+
+Return

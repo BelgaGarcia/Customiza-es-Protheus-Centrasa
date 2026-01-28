@@ -1,0 +1,113 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.nf
+
+/*/{Protheus.doc} segundaUnidadeMedida
+
+Altera unidade de medida para o cliente.
+
+@type Function
+@author Gabriel Goncalves
+@since 24/10/2024
+@version P12
+@database MSSQL,Oracle
+
+/*/
+User Function segundaUnidadeMedida(aDadosNF)
+	Private aRetorno	:= aDadosNF		as array
+
+	buscarProdutoXCliente()
+Return aRetorno
+
+/*
+	Buscar dados Produto X Cliente - SA7
+*/
+Static Function buscarProdutoXCliente()
+	Local cQuery		:= ""	as character
+	Local cAlias
+	Local nPosicaoArray	:= 0	as integer
+
+	For nPosicaoArray := 1 To Len(aRetorno[1])
+		cQuery := 	queryProdutoXCliente(nPosicaoArray)
+
+		MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+		(cAlias)->(DbGoTop())
+		If (cAlias)->(!EoF())
+			If (cAlias)->FATOR_CONVERSAO > 0 //.Or. (cAlias)->A7_ZUMNFE $ "KG|TL"
+				aRetorno[1][nPosicaoArray][11]	:= aRetorno[1][nPosicaoArray][08] //uTrib
+				aRetorno[1][nPosicaoArray][12]	:= aRetorno[1][nPosicaoArray][09] //qTrib
+				aRetorno[1][nPosicaoArray][45]	:= aRetorno[1][nPosicaoArray][03] //eanTrib
+				
+				If !Empty((cAlias)->C6_ZUMNFE)
+					aRetorno[1][nPosicaoArray][08]	:= (cAlias)->C6_ZUMNFE //uCom
+				EndIf
+
+				If (cAlias)->C6_ZQTDNFE > 0
+					aRetorno[1][nPosicaoArray][09]	:= (cAlias)->C6_ZQTDNFE //qCom
+				EndIf
+
+				If (cAlias)->C6_ZVLRNFE > 0
+					aRetorno[1][nPosicaoArray][16]	:= (cAlias)->C6_ZVLRNFE //vUnCom
+				EndIf
+
+				If !Empty((cAlias)->A7_CODCLI)
+					aRetorno[1][nPosicaoArray][25]	:= aRetorno[1][nPosicaoArray][25] + " Cod: " + AllTrim((cAlias)->A7_CODCLI) //infAdProd
+				EndIf
+			EndIf
+		EndIf
+
+		(cAlias)->(DbCloseArea())
+	Next nPosicaoArray
+Return
+
+/*
+	Query Produto X Cliente - SA7
+*/
+Static Function queryProdutoXCliente(nPosicaoArray)
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        A7_ZUMNFE "	+ CRLF
+	cQuery += "        ,A7_CODCLI "	+ CRLF
+	cQuery += "        ,A7_ZVLRUN "	+ CRLF
+	cQuery += "        ,CASE WHEN Z6_FATOR IS NOT NULL THEN Z6_FATOR ELSE A7_ZCONV END AS FATOR_CONVERSAO "	+ CRLF
+	cQuery += "        ,CASE WHEN Z6_TIPO IS NOT NULL THEN Z6_TIPO ELSE A7_ZTPCONV END AS TIPO_CONVERSAO "	+ CRLF
+	cQuery += "        ,C6_ZPESO "	+ CRLF
+	cQuery += "        ,C6_ZUMNFE "	+ CRLF
+	cQuery += "        ,C6_ZQTDNFE "	+ CRLF
+	cQuery += "        ,C6_ZVLRNFE "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SA7") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 	    AND C6_NUM		= '"+aRetorno[1][nPosicaoArray][38]+"' " + CRLF
+	cQuery += " 	    AND C6_ITEM		= '"+aRetorno[1][nPosicaoArray][39]+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += " LEFT JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SZ6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ6") + CRLF
+	cQuery += " 	    AND Z6_UMORIG	= '"+aRetorno[1][nPosicaoArray][08]+"' " + CRLF
+	cQuery += " 	    AND Z6_UMDEST	= A7_ZUMNFE " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SA7") + CRLF
+	cQuery += " 		AND A7_CLIENTE	= '"+aRetorno[5][7]+"' " + CRLF
+	cQuery += " 		AND A7_LOJA		= '"+aRetorno[5][8]+"' " + CRLF
+	cQuery += " 		AND A7_PRODUTO	= '"+aRetorno[1][nPosicaoArray][2]+"' " + CRLF
+	cQuery += " 		AND A7_UMNFE	= '2' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SA7") + CRLF
+Return cQuery

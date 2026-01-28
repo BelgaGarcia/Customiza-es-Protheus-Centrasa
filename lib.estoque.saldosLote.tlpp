@@ -1,0 +1,222 @@
+#include "totvs.ch"
+#include "protheus.ch"
+#include "fwbrowse.ch"
+#include "topconn.ch"
+
+#define  POS_LOTE		01
+#define  POS_PRODUTO	02
+#define  POS_SALDO		03
+#define  POS_VALIDADE	04
+#define  POS_LOTFOR		05
+#define  POS_EMISSAO	06
+#define  POS_DOC		07
+#define  POS_SERIE		08
+#define  POS_CLIFOR		09
+#define  POS_LOJA		10
+
+namespace lib.estoque
+
+/*/{Protheus.doc} SaldosLote
+
+Função que mostra saldos por lote produtos
+
+@type  Function
+@author Elcilei Lopes
+@since  03/12/2025
+@version version
+
+@param cProduto     - character - Codigo do produto  - Obrigatorio
+@param cLocal       - character - Armazém do estoque - Obrigatorio
+@param cOrigLanc    - character - Origem do lancamento - Default vazio
+@param cNumeroDoc   - character - Numero do documento - Default vazio
+@param cSerieDoc    - character - Serie do documento - Default vazio
+@param cClieFor     - character - Codigo Cliente ou Fornecedor - Default vazio
+@param cLoja        - character - Loja do cliente ou fornecedor - Default vazio
+
+@return cLoteCtl    - character - Numero lote selecionado            
+
+/*/
+User Function SaldosLote(cProduto,cLocal,cOrigLanc,cNumeroDoc,cSerieDoc,cClieFor,cLoja)
+	Local aRet          := {}   as array
+	Local cQuery        := ""   as character
+	Local cAlias        := ""   as character
+	Local oPnlSaldos    := Nil  as object
+	Local oPnlBotoes    := Nil  as object
+	Local oBtnCancelar  := Nil  as object
+	Local oBtnConfirmar := Nil  as object
+
+	Private cTitulo     := ""   as character
+	Private oBrwSaldos  := Nil  as object
+	Private aDescCabec  := {}   as array
+	Private aSaldos		:= {}	as array
+
+	Default cProduto    := ""
+	Default cLocal      := ""
+	Default cOrigLanc   := ""
+	Default cNumeroDoc  := ""
+	Default cSerieDoc   := ""
+	Default cClieFor    := ""
+	Default cLoja       := ""
+
+	cTitulo := "Saldos Por Lote"
+	aRet	:= {AvKey("","B8_LOTECTL"),CTOD("")} 
+
+	If Empty(cProduto) .Or. Empty(cLocal)
+		FWAlertWarning("Produto e Armazém são obrigatórios.",cTitulo)
+		Return aRet
+	Endif
+
+	aDescCabec  := {;
+		"Lote",;
+		"Produto",;
+		"Saldo Atual",;
+		"Validade",;
+		"Lote Fornecedor",;
+		"Dt.Emissao",;
+		"Nota Fiscal",;
+		"Serie",;
+		"Cliente/Fornecedor",;
+		"Loja"}
+
+	cQuery  := getQrySaldoLote(cProduto,cLocal,cOrigLanc,cNumeroDoc,cSerieDoc,cClieFor,cLoja)
+	cAlias  := MpSysOpenQuery(cQuery)
+
+	dbSelectArea(cAlias)
+
+	If ( (cAlias)->(EOF()) )
+		FWAlertWarning("Não exite lote disponível para o Produto e Armazém informado.",cTitulo)
+		Return aRet
+	Endif
+
+	oDlgSaldos      := MSDialog():New( 231,282,564,1336,"Saldos por Lote",,,.F.,,,,,,.T.,,,.T. )
+	oBrwSaldos      := TWBrowse():New(000,000,000,000,,aDescCabec,{20,30,30},oDlgSaldos,,,,,{|| .T. },,,,,,,.F.,,.T.,,.F.,,,)
+	oBrwSaldos:Align:= CONTROL_ALIGN_ALLCLIENT
+	OBRWSALDOS:BLDBLCLICK := { || confirmarSaldo(@aRet) }
+	oPnlSaldos      := TPanel():New( 135,002,"",oDlgSaldos,,.F.,.F.,,,516,023,.F.,.F. )
+	oPnlSaldos:Align:= CONTROL_ALIGN_BOTTOM
+	oPnlBotoes      := TPanel():New( 001,176,"",oPnlSaldos,,.F.,.F.,,,172,020,.F.,.F. )
+	oPnlBotoes:Align:= CONTROL_ALIGN_RIGHT
+	oBtnCancelar    := TButton():New( 004,127,"Cancelar",oPnlBotoes,{|| oDlgSaldos:End() },040,013,,,,.T.,,"",,,,.F. )
+	oBtnConfirmar   := TButton():New( 004,085,"Confirmar",oPnlBotoes,{|| confirmarSaldo(@aRet)},040,013,,,,.T.,,"",,,,.F. )
+
+	incluirSaldoBrowser(cAlias)
+
+	oDlgSaldos:Activate(,,,.T.)
+
+Return aRet
+
+/*/
+	Confirmar selecao do lote
+/*/
+Static Function confirmarSaldo(aRet)	
+	Local nLinha		:= 0		as numeric
+
+	Default aRet := {AvKey("","B8_LOTECTL"),CTOD("")} 
+
+	nLinha	:= oBrwSaldos:NAT
+
+	aRet[1] := AvKey(aSaldos[oBrwSaldos:NAT,POS_LOTE],"B8_LOTECTL")
+	aRet[2] := CTOD(aSaldos[oBrwSaldos:NAT,POS_VALIDADE])
+
+	oDlgSaldos:End()
+
+Return
+
+/*/
+	Inicializar Browser com os saldos
+/*/
+Static Function incluirSaldoBrowser(cAlias)
+
+	aSaldos := {}
+	(cAlias)->(DbGoTop())
+	While !(cAlias)->(eof())
+		
+		If ( (cAlias)->SALDO > 0)
+		
+			aAdd( aSaldos , {;
+				(cAlias)->B8_LOTECTL				,;
+				(cAlias)->B8_PRODUTO				,;
+				(cAlias)->SALDO						,;
+				Dtoc(Stod( (cAlias)->B8_DTVALID ))	,;
+				(cAlias)->B8_LOTEFOR				,;
+				Dtoc(Stod( (cAlias)->B8_DATA ))		,;
+				(cAlias)->B8_DOC					,;
+				(cAlias)->B8_SERIE					,;
+				(cAlias)->B8_CLIFOR					,;
+				(cAlias)->B8_LOJA					})
+
+		Endif
+
+		(cAlias)->(dbSkip())
+	EndDo
+
+	oBrwSaldos:SetArray(aSaldos)
+
+	oBrwSaldos:bLine := {|| { ;
+		aSaldos[oBrwSaldos:NAT,POS_LOTE],;
+		aSaldos[oBrwSaldos:NAT,POS_PRODUTO],;
+		aSaldos[oBrwSaldos:NAT,POS_SALDO],;
+		aSaldos[oBrwSaldos:NAT,POS_VALIDADE],;
+		aSaldos[oBrwSaldos:NAT,POS_LOTFOR],;
+		aSaldos[oBrwSaldos:NAT,POS_EMISSAO],;
+		aSaldos[oBrwSaldos:NAT,POS_DOC],;
+		aSaldos[oBrwSaldos:NAT,POS_SERIE],;
+		aSaldos[oBrwSaldos:NAT,POS_CLIFOR],;
+		aSaldos[oBrwSaldos:NAT,POS_LOJA] }}
+
+Return
+
+/*/
+	Query para filtras lotes disponiveis
+/*/
+Static Function getQrySaldoLote(cProduto,cLocal,cOrigLanc,cNumeroDoc,cSerieDoc,cClieFor,cLoja)
+	Local cQuery := ""  as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += " 	  B8_LOTECTL " + CRLF
+	cQuery += " 	 ,B8_PRODUTO " + CRLF
+	cQuery += " 	 ,B8_SALDO - (B8_EMPENHO + B8_QACLASS) AS SALDO" + CRLF
+	cQuery += " 	 ,B8_DTVALID " + CRLF
+	cQuery += " 	 ,B8_DATA " + CRLF
+	cQuery += " 	 ,B8_DOC " + CRLF
+	cQuery += " 	 ,B8_SERIE " + CRLF
+	cQuery += " 	 ,B8_CLIFOR " + CRLF
+	cQuery += " 	 ,B8_LOJA " + CRLF
+	cQuery += " 	 ,B8_LOTEFOR " + CRLF
+
+	cQuery += " FROM " + CRLF
+
+	cQuery += "		" + RetSqlTab("SB8") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += "   	1 = 1 " + CRLF
+	cQuery += "   	AND " + RetSqlFil("SB8") + CRLF
+	cQuery += "   	AND B8_PRODUTO = " + ValToSql(cProduto) + CRLF
+	cQuery += "   	AND B8_LOCAL = " + ValToSql(cLocal) + CRLF
+
+	If !Empty(cOrigLanc)
+		cQuery += "   	AND B8_ORIGLAN = " + ValToSql(cOrigLanc) + CRLF
+	Endif
+
+	If !Empty(cNumeroDoc)
+		cQuery += "   	AND B8_DOC = " + ValToSql(cNumeroDoc) + CRLF
+	Endif
+
+	If !Empty(cSerieDoc)
+		cQuery += "   	AND B8_SERIE = " + ValToSql(cSerieDoc) + CRLF
+	Endif
+
+	If !Empty(cClieFor)
+		cQuery += "   	AND B8_CLIFOR = " + ValToSql(cClieFor) + CRLF
+	Endif
+
+	If !Empty(cLoja)
+		cQuery += "   	AND B8_LOJA = " + ValToSql(cLoja) + CRLF
+	Endif
+
+	cQuery += "   	AND " + RetSQLDel("SB8") + CRLF
+
+	cQuery += " ORDER BY " + CRLF
+	cQuery += " 	B8_DTVALID "
+
+Return cQuery

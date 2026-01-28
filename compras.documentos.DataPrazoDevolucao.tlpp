@@ -1,0 +1,351 @@
+#include "totvs.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+#include "tbicode.ch"
+
+namespace compras.documentos
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} - Prazo Legal de Retorno da Mercadoria
+
+Função responsável por validar o preenchimento do prazo legal de
+retorno da mercadoria quando a TES estiver com o campo Poder de
+Terceiros = Remessa
+
+@author	   PTorres - DSM
+@since	   Outubro/2024
+@version   P12
+@obs	   SIGACOM
+@database  Oracle
+
+Alteracoes Realizadas desde a Estruturacao Inicial
+Data       Programador     Motivo
+/*/
+//-------------------------------------------------------------------
+User Function DataPrazoDevolucao(nChamada)
+
+    Private cCodForCli   := ""         as character
+    Private cLojForCli   := ""         as character
+    Private cNumeroDoc   := ""         as character
+    Private cSerieNota   := ""         as character
+    Private dDataEmiss   := CTOD("//") as date
+    Private dDataProrrog := CTOD("//") as date
+    Private cProtProrrog := Space(20)  as character
+    Private lTesRemessa  := .F.        as logical
+    Private lMostra      := .T.        as logical
+
+    Private oDlg := Nil as object
+    Private oFwl := Nil as object
+	Private oSB6 := Nil as object
+
+    Private oBloco1 := Nil as object
+    Private oBloco2 := Nil as object
+
+    Private aSB6 := {}
+
+    //+-----------------------------------------------
+    //+ MT103FIM - Documento de Entrada
+    //+-----------------------------------------------
+    If nChamada == 1
+
+        cCodForCli := SF1->F1_FORNECE
+        cLojForCli := SF1->F1_LOJA
+        cNumeroDoc := SF1->F1_DOC
+        cSerieNota := SF1->F1_SERIE
+        dDataEmiss := SF1->F1_EMISSAO
+
+        lTesRemessa := F_TESREM(1)
+
+        lMostra := .F.
+
+    //+-----------------------------------------------
+    //+ MTA103MNU - Documento de Entrada
+    //+-----------------------------------------------
+    ElseIf nChamada == 2
+
+        cCodForCli := SF1->F1_FORNECE
+        cLojForCli := SF1->F1_LOJA
+        cNumeroDoc := SF1->F1_DOC
+        cSerieNota := SF1->F1_SERIE
+
+        lTesRemessa := F_TESREM(1)
+
+        lMostra := .T.
+
+    //+-----------------------------------------------
+    //+ M460FIM - Documento de Saida
+    //+-----------------------------------------------
+    ElseIf nChamada == 3
+
+        cCodForCli := SF2->F2_CLIENTE
+        cLojForCli := SF2->F2_LOJA
+        cNumeroDoc := SF2->F2_DOC
+        cSerieNota := SF2->F2_SERIE
+        dDataEmiss := SF2->F2_EMISSAO
+
+        lTesRemessa := F_TESREM(2)
+
+        lMostra := .F.
+
+    //+-----------------------------------------------
+    //+ MA461ROT - Documento de Saida
+    //+-----------------------------------------------
+    ElseIf nChamada == 4
+
+        cCodForCli := SC9->C9_CLIENTE
+        cLojForCli := SC9->C9_LOJA
+        cNumeroDoc := SC9->C9_NFISCAL
+        cSerieNota := SC9->C9_SERIENF
+
+        lTesRemessa := F_TESREM(2)
+
+        lMostra := .T.
+
+    Endif
+
+   //-- Se mostra tela de prorrogação
+   If lMostra
+        //-- Se achou TES = Remessa
+        If lTesRemessa
+
+            oDlg := MSDialog():New(300,300,650/*Altura*/,1300/*Largura*/,"Saldo em Poder de Terceiros",,,,DS_MODALFRAME,CLR_BLACK,CLR_WHITE,,,.T.)
+
+            oFwl := FWLayer():New()
+
+            oFwl:Init(oDlg,.F.)
+
+            oFwl:AddCollumn( 'CENTRO' , 100 , .F. )
+
+            oFwl:AddWindow( 'CENTRO' , 'B1' , '' , 070 , .F. , .F. )
+            oFwl:AddWindow( 'CENTRO' , 'B2' , '' , 030 , .F. , .F. )
+
+            oBloco1 := oFwl:GetWinPanel('CENTRO','B1')
+
+                oSB6 := TWBrowse():New(000,000,000,000,,{"Filial","Documento","Série","Cliente | Fornecedor","Loja","Produto","Data Emissão","Data Limite","Prazo em Dias","Identificador"},{20,30,30},oBloco1,,,,,{|| .T. },,,,,,,.F.,,.T.,,.F.,,,)
+                oSB6:Align := CONTROL_ALIGN_ALLCLIENT
+
+            oBloco2 := oFwl:GetWinPanel('CENTRO','B2')
+
+                TGet():New(001,005,{|u| If(PCount()>0,dDataProrrog:=u,dDataProrrog)},oBloco2,050,012,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"dDataProrrog",,,,,,,"Data de Prorrogação",1)
+
+                If lMostra
+                    TGet():New(001,095,{|u| If(PCount()>0,cProtProrrog:=u,cProtProrrog)},oBloco2,080,012,"@!",,,,,,,.T.,,,{|| lMostra},,,,.F.,,,"cProtProrrog",,,,,,,"Número do Protocolo",1)
+                Endif
+
+                TButton():New( 005 , 350 , "Confirmar" , oBloco2 , {|| F_ALTSB6()} , 050 , 014 , , , .T. , .T. , , "Confirmar" )
+
+                If lMostra
+                    TButton():New( 005 , 425 , "Cancelar"  , oBloco2 , {|| oDlg:End()} , 050 , 014 , , , .T. , .T. , , "Cancelar"  )
+                Endif
+
+            F_SQLSB6()
+
+            oDlg:lEscClose := .F.
+            oDlg:lCentered := .T.
+
+            oDlg:Activate(,,,.T.,)
+
+        Endif
+    //-- Se não mostra tela de prorrogação
+    Else
+        //-- Se achou TES = Remessa
+        If lTesRemessa
+
+            F_SQLSB6()
+
+            If !Empty(aSB6)
+                F_ALTSB6()
+            Endif
+
+        Endif
+    Endif
+
+Return
+
+//-- Verifica se algum dos produtos possui a TES - Controla Poder de Terceiros = Remessa
+Static Function F_TESREM(nDocumento)
+
+    Local cRemessa := ""
+    Local lRemessa := .F.
+
+    //+-----------------------------------
+    //+ SIGACOM - Documento de Entrada
+    //+-----------------------------------
+    If nDocumento == 1
+    
+        DbSelectArea("SD1")
+        SD1->(DbSetOrder(1))
+        SD1->(DbGotop())
+
+        If SD1->(MsSeek(xFilial("SD1") + cNumeroDoc + cSerieNota + cCodForCli + cLojForCli))
+
+            Do While SD1->(!Eof()) .AND. xFilial("SD1") + cNumeroDoc + cSerieNota + cCodForCli + cLojForCli == xFilial("SD1") + SD1->D1_DOC + SD1->D1_SERIE + SD1->D1_FORNECE + SD1->D1_LOJA
+
+                cRemessa := Posicione("SF4",1,xFilial("SF4") + SD1->D1_TES,"F4_PODER3")
+
+                If cRemessa == "R"
+                    lRemessa := .T.
+                Endif
+
+                SD1->(DbSkip())
+
+            Enddo
+
+        Endif
+
+    //+-----------------------------------
+    //+ SIGAFAT - Documento de Sa da
+    //+-----------------------------------
+    ElseIf nDocumento == 2
+
+	    DbSelectArea("SD2")
+	    SD2->(DbSetOrder(3))
+        SD2->(DbGotop())
+
+        If SD2->(MsSeek(xFilial("SD2") + cNumeroDoc + cSerieNota + cCodForCli + cLojForCli))
+
+            Do While SD2->(!Eof()) .AND. xFilial("SD2") + cNumeroDoc + cSerieNota + cCodForCli + cLojForCli == xFilial("SD2") + SD2->D2_DOC + SD2->D2_SERIE + SD2->D2_CLIENTE + SD2->D2_LOJA
+
+                cRemessa := Posicione("SF4",1,xFilial("SF4") + SD2->D2_TES,"F4_PODER3")
+
+                If cRemessa == "R"
+                    lRemessa := .T.
+                Endif
+
+                SD2->(DbSkip())
+
+            Enddo
+
+        Endif
+
+    Endif
+
+Return(lRemessa)
+
+Static Function F_SQLSB6()
+
+	Local aAlias := GetArea()
+	Local cAlias := GetNextAlias() 
+	Local cQuery := ""
+    Local nDiasA := 0
+    Local nDiasB := 0
+    Local nDiasC := 0
+
+    aSB6 := {}
+
+	cQuery := " SELECT * " + CRLF
+    cQuery += " FROM " + RetSqlName("SB6") + " " + CRLF
+    cQuery += " WHERE D_E_L_E_T_ <> '*' " + CRLF
+    cQuery += "   AND B6_FILIAL   = '" + xFilial("SB6") + "' " + CRLF
+    cQuery += "   AND B6_CLIFOR   = '" + cCodForCli + "' " + CRLF
+    cQuery += "   AND B6_LOJA     = '" + cLojForCli + "' " + CRLF
+    cQuery += "   AND B6_DOC      = '" + cNumeroDoc + "' " + CRLF
+    cQuery += " ORDER BY R_E_C_N_O_ " + CRLF
+
+	DbUseArea(.T.,"TOPCONN",TCGenQry(,,cQuery),cAlias,.F.,.T.)
+
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+
+	While (cAlias)->(!Eof())
+
+        nDiasA := DateDiffDay(STOD((cAlias)->B6_EMISSAO),STOD((cAlias)->B6_ZDATRET))
+        nDiasB := DateDiffDay(STOD((cAlias)->B6_EMISSAO),dDatabase)
+        nDiasC := nDiasA - nDiasB
+
+        AADD( aSB6 , { (cAlias)->B6_FILIAL   ,; //-- 01
+                       (cAlias)->B6_DOC      ,; //-- 02
+                       (cAlias)->B6_SERIE    ,; //-- 03
+                       (cAlias)->B6_CLIFOR   ,; //-- 04
+                       (cAlias)->B6_LOJA     ,; //-- 05
+                       (cAlias)->B6_PRODUTO  ,; //-- 06
+                  STOD((cAlias)->B6_EMISSAO) ,; //-- 07
+                  STOD((cAlias)->B6_ZDATRET) ,; //-- 08
+                       nDiasC                ,; //-- 09
+                       (cAlias)->B6_IDENT    }) //-- 10
+
+        nDiasA := 0
+        nDiasB := 0
+        nDiasC := 0
+
+		(cAlias)->(DbSkip())
+	Enddo
+
+	(cAlias)->(DbCloseArea())
+
+    If lMostra
+        If !Empty(aSB6)
+            oSB6:SetArray(aSB6)
+            oSB6:bLine := {|| { aSB6[oSB6:nAt,01] ,; //-- 01
+                                aSB6[oSB6:nAt,02] ,; //-- 02
+                                aSB6[oSB6:nAt,03] ,; //-- 03
+                                aSB6[oSB6:nAt,04] ,; //-- 04
+                                aSB6[oSB6:nAt,05] ,; //-- 05
+                                aSB6[oSB6:nAt,06] ,; //-- 06
+                                aSB6[oSB6:nAt,07] ,; //-- 07
+                                aSB6[oSB6:nAt,08] ,; //-- 08
+                                aSB6[oSB6:nAt,09] ,; //-- 09
+                                aSB6[oSB6:nAt,10] }} //-- 10
+
+            oSB6:Refresh()
+        Endif
+    Endif
+
+	RestArea(aAlias)
+
+Return
+
+Static Function F_ALTSB6()
+
+    Local nX := 0
+    Local lAlterou := .F.
+
+    If lMostra
+
+        If !Empty(dDataProrrog)
+
+            DbSelectArea("SB6")
+            SB6->(DbSetOrder(1)) //-- B6_FILIAL + B6_PRODUTO + B6_CLIFOR + B6_LOJA + B6_IDENT
+
+            For nX := 1 To Len(aSB6)
+
+                If SB6->(MsSeek(xFilial("SB6") + aSB6[nX,06] + cCodForCli + cLojForCli + aSB6[nX,10]))
+                    RecLock("SB6",.F.)
+                     SB6->B6_ZDATRET := dDataProrrog
+                     SB6->B6_ZPROTOC := cProtProrrog
+                    SB6->(MsUnlock())
+
+                    lAlterou := .T.
+                Endif
+
+            Next nX
+
+            If lAlterou
+                FWAlertSuccess("Prazo de prorrogação alterado com sucesso!",">>> Atenção <<<")
+                oDlg:End()
+            Endif
+
+        Else
+
+            FWAlertWarning("O preenchimento dos campos Data e ou Protocolo é obrigatório!",">>> Atenção <<<")
+
+        Endif
+
+    Else
+
+        DbSelectArea("SB6")
+        SB6->(DbSetOrder(1)) //-- B6_FILIAL + B6_PRODUTO + B6_CLIFOR + B6_LOJA + B6_IDENT
+
+        For nX := 1 To Len(aSB6)
+
+            If SB6->(MsSeek(xFilial("SB6") + aSB6[nX,06] + cCodForCli + cLojForCli + aSB6[nX,10]))
+                RecLock("SB6",.F.)
+                 SB6->B6_ZDATRET := DaySum(dDataEmiss,180)
+                SB6->(MsUnlock())
+            Endif
+
+        Next nX
+
+    Endif
+
+Return

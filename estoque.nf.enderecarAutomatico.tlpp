@@ -1,0 +1,304 @@
+#include "totvs.ch"
+
+namespace estoque.nf
+
+//*****************************
+/*/{Protheus.doc} ACOM016
+Rotina para gerar endereçamento automatico para o produto.
+
+@author Rodolfo Carvalho
+@since 09/10/2024
+@version 1.0
+
+@param cOpc, characters, Opções I = Incluir | D = Deletar
+
+@type function
+
+@see Desativar MV_DISTMOV
+/*/
+//*****************************
+User Function EnderecarAutomatico()
+    Local aAreaSD1  := {} //SD1->(GetArea())
+    Local cNumNota  := SF1->F1_DOC
+    Local cNumSerie := SF1->F1_SERIE
+    Local cCodFor   := SF1->F1_FORNECE
+    Local cCodLoj   := SF1->F1_LOJA
+    Local lDistMov	:= SuperGetMV("MV_DISTMOV",.F.,.F.)
+
+	If !lDistMov
+		DbSelectArea("SD1")
+		SD1->(dbSetOrder(1)) // D1_FILIAL+D1_DOC+D1_SERIE+D1_FORNECE+D1_LOJA+D1_COD+D1_ITEM
+		SD1->(DbGotop())
+
+		If SD1->(DbSeek(FwxFilial("SD1")+cNumNota+cNumSerie+cCodFor+cCodLoj))
+
+			while SD1->(!EOF()) .AND. SD1->(D1_FILIAL+D1_DOC+D1_SERIE+D1_FORNECE+D1_LOJA) == (FwxFilial("SD1")+cNumNota+cNumSerie+cCodFor+cCodLoj)
+
+				DbSelectArea("SB1")
+				SB1->(dbSetOrder(1))
+
+				DbSelectArea("SF4")
+				SF4->(dbSetOrder(1)) // F4_FILIAL+F4_CODIGO
+				If SF4->(DbSeek(FwxFilial("SF4")+SD1->D1_TES))
+
+					If alltrim(SF4->F4_ESTOQUE) == "S"
+
+						If SB1->(DbSeek(FwxFilial("SB1")+SD1->D1_COD))
+
+							If Alltrim(SB1->B1_LOCALIZ) == "S"
+								aAreaSD1  := SD1->(GetArea())
+								Processa({|| ACOM016("I", SD1->(RECNO()))}, "Endereçando Produtos...")
+								restarea(aAreaSD1)
+							EndIf
+						EndIf
+					EndIf
+				EndIf
+				SD1->(DbSkip())
+			endDo
+		EndIf
+	EndIf
+
+Return
+
+/*/
+    Funcao para enderecar
+/*/    
+Static Function ACOM016( cOpc, nRecno )
+
+	Local aArea    := getarea()
+	Local lDistMov := SuperGetMV("MV_DISTMOV",.F.,.F.)
+
+	If !lDistMov
+
+		do case
+		case cOpc == "I"
+			ACOM016I()
+		case cOpc == "D"
+			If ApMsgYesNo("Deseja realmente estornar os endereçamentos?", "Documento de Entrada")
+				ACOM016D()
+			EndIf
+		endcase
+
+	EndIf
+
+	restarea(aArea)
+
+Return
+
+//*****************************
+/*/{Protheus.doc} ACOM016I
+Utiliza a opção de endereçar do MATA265 padrão.
+
+@author Lucas
+@since 28/03/2017
+@version 1.0
+
+@type function
+/*/
+//*****************************
+Static Function ACOM016I()
+
+	Local aCabSDA   := {}
+	Local aItSDB    := {}
+	Local aItensSDB := {}
+	Local aArea     := GetArea()
+
+	Private lMsErroAuto := .F.
+
+	dbSelectArea("SDA")
+	SDA->(dbSetOrder(1))
+
+	ProcRegua( 0 )
+	ProcessMessages()
+
+
+	incProc("Produto: " + allTrim(SD1->D1_COD) + " – Sequencial: " + SD1->D1_NUMSEQ )
+	ProcessMessages()
+
+	SDA->(dbGoTop()) // posiciona o cabeçalho
+	If SDA->(dbSeek( xfilial("SDA") + SD1->D1_COD + SD1->D1_LOCAL + SD1->D1_NUMSEQ + SF1->F1_DOC + SF1->F1_SERIE + SF1->F1_FORNECE + SF1->F1_LOJA ))
+		If SDA->DA_SALDO > 0
+
+			lMsErroAuto := .F.
+
+			dbSelectArea("SA1")
+			SA1->(dbSetOrder(1))
+			If SA1->(dbSeek(FwxFilial("SA1")+SF1->F1_FORNECE + SF1->F1_LOJA))
+
+				dbSelectArea("SBE")
+				SBE->(dbSetOrder(1))
+				If !SBE->(dbSeek(FwxFilial("SBE")+SDA->DA_LOCAL+SA1->A1_CGC))
+
+					tMata015(SDA->DA_LOCAL, SA1->A1_CGC, Alltrim(SA1->A1_NOME) )
+
+				EndIf
+
+			Else
+
+				If SF1->F1_TIPO == "N" .AND. Alltrim(SF1->F1_ESPECIE) == "GER"
+
+					dbSelectArea("SA2")
+					SA2->(dbSetOrder(1))
+					If SA2->(dbSeek(FwxFilial("SA2")+SF1->F1_FORNECE + SF1->F1_LOJA))
+
+						dbSelectArea("SBE")
+						SBE->(dbSetOrder(1))
+						If !SBE->(dbSeek(FwxFilial("SBE")+SDA->DA_LOCAL+SA2->A2_CGC))
+
+							tMata015(SDA->DA_LOCAL, SA2->A2_CGC, Alltrim(SA2->A2_NOME) )
+
+						EndIf
+
+					EndIf
+
+				Else
+
+					// Ainda não esta claro a informação do Cliente dono da Mercadoria recebida (Verificar Daiana)
+					Return
+
+					// Procurar codigo do cliente
+					// DbSelectArea("SDH")
+					// SDH->(dbSetOrder(1))
+					// If SDH->(DbSeek(FwxFilial("SDH")+SD1->D1_NUMSEQ))
+
+
+
+					// EndIf
+
+				EndIf
+
+			EndIf
+
+			aCabSDA := {}
+			aadd(aCabSDA, {"DA_PRODUTO", SDA->DA_PRODUTO, Nil})
+			aadd(aCabSDA, {"DA_NUMSEQ" , SDA->DA_NUMSEQ , Nil})
+
+			aItSDB := {}
+			aadd(aItSDB, {"DB_ITEM"   , "0001", Nil})
+			aadd(aItSDB, {"DB_ESTORNO", " "   , Nil})
+
+			If SF1->F1_TIPO == "N" .AND. Alltrim(SF1->F1_ESPECIE) == "GER"
+				aadd(aItSDB, {"DB_LOCALIZ", SA2->A2_CGC  , Nil})
+			Else
+				aadd(aItSDB, {"DB_LOCALIZ", SA1->A1_CGC  , Nil})
+			EndIf
+
+			aadd(aItSDB, {"DB_DATA"   , dDataBase    , Nil})
+			aadd(aItSDB, {"DB_QUANT"  , SDA->DA_SALDO, Nil})
+
+			aItensSDB := {}
+			aadd( aItensSDB, aitSDB )
+
+			lMsErroAuto := .F.
+			MATA265( aCabSDA, aItensSDB, 3)
+
+			If lMsErroAuto
+				ConOut("Erro")
+			Else
+				ConOut("Sucesso! ")
+			EndIf
+		EndIf
+	EndIf
+
+	RestArea(aArea)
+Return
+
+//*****************************
+/*/{Protheus.doc} ACOM016D
+Realiza o estorno se houver algo a estornar
+
+@author Lucas
+@since 28/03/2017
+@version 1.0
+
+@type function
+/*/
+//*****************************
+Static Function ACOM016D()
+
+	Local aCabSDA := {}
+	Local aItSDB := {}
+	Local aItensSDB := {}
+	// Local nCount := 0
+
+	Private lMsErroAuto := .F.
+
+	dbSelectArea("SDA")
+	SDA->(dbSetOrder(1))
+
+	dbSelectArea("SDB")
+	SDB->(dbSetOrder(1))
+
+
+	incProc("Produto: " + allTrim(SD1->D1_COD) + " – Sequencia: " + allTrim( SD1->D1_NUMSEQ ) + " – Item: " + allTrim( SD1->D1_ITEM ) )
+	ProcessMessages()
+
+	SDA->(dbGoTop())
+	if SDA->(dbSeek( xfilial("SDA") + SD1->D1_COD + SD1->D1_LOCAL + SD1->D1_NUMSEQ + SF1->F1_DOC + SF1->F1_SERIE + SF1->F1_FORNECE + SF1->F1_LOJA ))
+
+		SDB->(dbGoTop())
+		if SDB->( dbSeek( xfilial("SDB") + SD1->D1_COD + SDA->DA_LOCAL + SD1->D1_NUMSEQ + SF1->F1_DOC + SF1->F1_SERIE + SF1->F1_FORNECE + SF1->F1_LOJA + SD1->DB_ITEM ) )
+			lMsErroAuto := .F.
+
+			aCabSDA := {}
+			aadd(aCabSDA, {"DA_PRODUTO", SD1->D1_COD   , Nil})
+			aadd(aCabSDA, {"DA_NUMSEQ" , SDA->DA_NUMSEQ, Nil})
+
+			aItSDB := {}
+			aadd(aItSDB, {"DB_ITEM"   , SDB->DB_ITEM   , Nil})
+			aadd(aItSDB, {"DB_ESTORNO", "S"            , Nil})
+			aadd(aItSDB, {"DB_LOCALIZ", SDB->DB_LOCALIZ, Nil})
+			aadd(aItSDB, {"DB_DATA"   , dDataBase      , Nil})
+			aadd(aItSDB, {"DB_QUANT"  , SDB->DB_QUANT  , Nil})
+
+			aItensSDB := {}
+			aadd( aItensSDB, aitSDB )
+			MATA265( aCabSDA, aItensSDB, 4)
+
+			If lMsErroAuto
+				ConOut("Erro")
+			Else
+				ConOut("Sucesso! ")
+			EndIf
+		EndIf
+	EndIf
+
+Return lMsErroAuto
+
+/*/{Protheus.doc} tMata015
+Criar endereço
+@type function
+@version 1.0
+@author rodolfomagalhaes
+@since 09/10/2024
+@return logical, se criou o endereco com sucesso
+/*/
+Static Function tMata015(cArmazem, cEndereco, cDescricao )
+
+	Local aVetor:= {}
+	Local nOpc := 0
+
+	Private lMsErroAuto := .F.
+
+	aVetor :={{"BE_LOCAL" ,cArmazem ,Nil},;
+		{"BE_LOCALIZ", cEndereco , NIL},;
+		{"BE_DESCRIC", Substr(cDescricao,1,TamSx3("BE_DESCRIC")[1]), NIL},;
+		{"BE_CAPACID", 0         , NIL},;
+		{"BE_PRIOR"  , "ZZZ"     , NIL},;
+		{"BE_ALTURLC", 0         , NIL},;
+		{"BE_LARGLC" , 0         , NIL},;
+		{"BE_COMPRLC", 0         , NIL},;
+		{"BE_PERDA"  , 5         , NIL},;
+		{"BE_STATUS" , "1"       , NIL}}
+
+	nOpc := 3	// inclusao
+
+	MSExecAuto({|x,y| MATA015(x,y)},aVetor, nOpc)
+
+	If lMsErroAuto
+		ConOut("Erro")
+	Else
+		ConOut("Sucesso! ")
+	EndIf
+
+Return

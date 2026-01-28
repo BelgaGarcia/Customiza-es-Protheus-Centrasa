@@ -1,0 +1,87 @@
+#include "protheus.ch"
+
+namespace compras.entrada.refaturamento
+
+/*/ {Protheus.doc} VerificaExisteRefaturamento
+
+Rotina verificar se existe refaturamento para exluir documento
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 09/12/2025
+@version P12
+@database ORACLE
+
+@Obs - Caso exista registro de faturamento será validado :
+1 - Existe refaturamento confirmado não pode excluir
+2 - Existe refaturamento cadastrado informar ao usuario se deseja exluir
+/*/
+User Function VerificaExisteRefaturamento()
+	Local lRet              := .T.  as logical
+	Local cNotaFiscal       := ""   as character
+	Local cSerieNota        := ""   as character
+	Local cCodFornecedor    := ""   as character
+	Local cLojFornecedor    := ""   as character
+
+	Private cTitulo         := ""   as character
+
+	cNotaFiscal    	:= SF1->F1_DOC
+	cSerieNota		:= SF1->F1_SERIE
+	cCodFornecedor  := SF1->F1_FORNECE
+	cLojFornecedor  := SF1->F1_LOJA
+	cTitulo         := "Exclusão de Documento Entrada"
+
+	dbSelectArea("SZ7")
+	SZ7->(dbSetOrder(2))
+
+	If SZ7->(dbSeek(FWxFilial("SZ7")+cNotaFiscal+cSerieNota+cCodFornecedor+cLojFornecedor))
+		If SZ7->Z7_STATUS == "1"
+			If FWAlertYesNo("Existe refaturamento cadastrdo, será excluido."+CRLF+"Deseja continuar?", cTitulo)
+				If !excluirRefaturamento()
+					lRet := .F.
+				Endif
+			Else
+				lRet := .F.
+			Endif
+		Else
+			FWAlertWarning("Documento não pode ser excluido, existe refaturamento confirmado.",cTitulo)
+			lRet := .F.
+		Endif
+	Endif
+
+Return lRet
+
+/*/
+	Excluir refaturmanto
+/*/
+Static Function excluirRefaturamento()
+	Local lRet := .T.   as logical
+
+	dbSelectArea("SZ8")
+	SZ8->(dbSetOrder(1))
+
+	If SZ8->(dbSeek(FWxFilial("SZ8")+SZ7->Z7_NUM))
+		While !SZ8->(eof()) .And. SZ8->Z8_FILIAL == FWxFilial("SZ8") .And. SZ8->Z8_NUM == SZ7->Z7_NUM
+			If RecLock("SZ8",.F.)
+				SZ8->(dbDelete())
+				SZ8->(MsUnlock())
+				SZ8->(dbSkip())
+			Else
+				lRet := .F.
+				FWAlertWarning("Não foi possivél excluir item do refaturamento.",cTitulo)
+				Exit
+			Endif
+		Enddo
+	Endif
+
+	If ( lRet == .T. )
+		If RecLock("SZ7",.F.)
+			SZ7->(dbDelete())
+			SZ7->(MsUnlock())
+		Else
+			lRet := .F.
+			FWAlertWarning("Não foi possivél excluir o refaturamento.",cTitulo)
+		Endif
+	Endif
+
+Return lRet

@@ -1,0 +1,617 @@
+#include "totvs.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+#include "tbicode.ch"
+
+#define POS_FILIAL			01
+#define POS_PRODUTO			02
+#define POS_LOCAL			03
+#define POS_SALDO			04
+#define POS_LOTECTL			05
+#define POS_SUBLOTE			06
+#define POS_ENDERECO		07
+#define POS_DESCRICAO		08
+#define POS_VALIDADE		09
+#define OPERACAO_INCLUSAO	3
+#define OPERACAO_ALTERACAO	4
+
+namespace faturamento.pedido
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} - inclusaoSucata
+
+Incluir item no pedido de venda relacionado a sucata
+Função responsavel por incluir item no pedido de venda relacionado a SUCATA
+selecionando os lotes e quantidades das bobinas. Os lotes das bobinas selecionadas 
+serão transferidas para o produto sucata e a somatoria destes lotes serão
+incluidas no pedido com o item SUCATA
+
+@author	   helerson.oliveira - DSM
+@since	   Outubro/2024
+@version   P12
+@obs	   SIGAFAT
+@database  Oracle
+
+@history 26/11/2025, elcilei.lopes, Realizado Refatoração para colocar no padrão. 
+
+/*/
+User Function inclusaoSucata(cPedVenda)
+
+	Private cProdutoPedido	:= ""	as character
+	Private cCodigoSucata	:= "" 	as character
+	Private nQtdSucata     	:= 0	as numeric
+	Private nPrcSucata    	:= 0	as numeric
+	Private cItemPedCompra 	:= ""	as character
+	Private cNumPedCompra  	:= ""  	as character
+	Private cOperSucata     := ""   as character
+	Private cTesSucata      := ""   as character
+	Private cCfopSucata     := ""   as character
+	Private cTitulo			:= ""   as character
+	Private cLocal			:= ""   as character
+	Private cDescricaoProd	:= ""   as character
+	Private cCodCliente		:= ""   as character
+	Private cLojCliente		:= ""   as character
+	Private cNumPedVenda	:= ""   as character
+
+	Private oDlgSucata      := Nil	as object
+	Private oFwlSucata      := Nil  as object
+	Private oBrwSucata      := Nil  as object
+
+	Private oPnlBrowser   	:= Nil  as object
+	Private oPnlGet  		:= Nil  as object
+
+	Private oGetSucata     	:= Nil  as Object
+	Private oGetOperacao    := Nil  as Object
+	Private oGetTes			:= Nil	as Object
+
+	Private nPosLocal		:= 0	as numeric
+	Private nPosProduto		:= 0	as numeric
+	Private nPosDescricao	:= 0	as numeric
+	Private nPosItemPV		:= 0 	as numeric
+	Private nPosNumeroPV	:= 0 	as numeric
+	Private aDadosSucata   	:= {}	as array
+	Private aErroLog		:= {}	as array
+	Private lMsErroAuto 	:= .F.	as logical
+	Private lMsHelpAuto    	:= .T.	as logical
+	Private lAutoErrNoFile	:= .T.	as logical
+
+
+	nPosLocal		:= GdFieldPos("C6_LOCAL")
+	nPosProduto		:= GdFieldPos("C6_PRODUTO")
+	nPosDescricao	:= GdFieldPos("C6_DESCRI")
+	nPosItemPV		:= GdFieldPos("C6_ITEMPC")
+	nPosNumeroPV	:= GdFieldPos("C6_NUMPCOM")
+
+	cLocal    		:= aCols[n,nPosLocal]
+	cProdutoPedido	:= aCols[n,nPosProduto]
+	cDescricaoProd  := aCols[n,nPosDescricao]
+
+	cItemPedCompra  := aCols[n,nPosItemPV]
+	cNumPedCompra   := aCols[n,nPosNumeroPV]
+	cCodCliente		:= SC5->C5_CLIENTE
+	cLojCliente		:= SC5->C5_LOJACLI
+	cNumPedVenda	:= SC5->C5_NUM
+	cTitulo 		:= "Incluisão Sucata Pedido"
+	cCodigoSucata	:= AvKey("","B1_COD")
+	cOperSucata     := AvKey("","C6_OPER")
+	cTesSucata      := AvKey("","C6_TES")
+	cCfopSucata     := AvKey("","F4_CF")
+
+	If Empty(SC5->C5_ZLOTCTL)
+		FWAlertWarning("ID Bobina não informado!",cTitulo)
+		Return
+	EndIf
+
+	oDlgSucata	:= MSDialog():New(300,300,550/*Altura*/,1550/*Largura*/,"Incluir Item Sucata - Pedido: " + SC5->C5_NUM,,,,DS_MODALFRAME,CLR_BLACK,CLR_WHITE,,,.T.)
+
+	oFwlSucata 	:= FWLayer():New()
+
+	oFwlSucata:Init(oDlgSucata,.F.)
+
+	oFwlSucata:AddCollumn( "CENTRO" , 100 , .F. )
+
+	oFwlSucata:AddWindow( "CENTRO" , "WBROWSER" , "" , 060 , .F. , .F. )
+	oFwlSucata:AddWindow( "CENTRO" , "WGET" 	, "" , 040 , .F. , .F. )
+
+	oPnlBrowser := oFwlSucata:GetWinPanel("CENTRO","WBROWSER")
+
+	oBrwSucata := TWBrowse():New(000,000,000,000,,{"Filial","Produto","Local","Saldo Lote","Num.Lote","Sub.Lote","Endereço","Descrição do Produto","Dt.Valid.Lote"},{20,30,30},oPnlBrowser,,,,,{|| .T. },,,,,,,.F.,,.T.,,.F.,,,)
+	oBrwSucata:Align := CONTROL_ALIGN_ALLCLIENT
+
+	oPnlGet := oFwlSucata:GetWinPanel('CENTRO',"WGET")
+
+	oGetSucata := TGet():New(001,005,{|u| If(PCount()>0,cCodigoSucata:=u,cCodigoSucata)},oPnlGet,060,012,"@!",{||pesquisaProdutoSucata()},,,,,,.T.,,,{|| .T.},,,,.F.,,,"cCodigoSucata",,,,,,,"Cod.Prod.Sucata",1)
+	oGetSucata:cF3 := "SB1"
+
+	TGet():New(001,080,{|u| If(PCount()>0,nPrcSucata:=u,nPrcSucata)},oPnlGet,080,012,"@E 99999999.999999",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"nPrcSucata",,,,,,,"Prc.Unitario",1)
+	TGet():New(001,170,{|u| If(PCount()>0,nQtdSucata:=u,nQtdSucata)}  ,oPnlGet,080,012,"@E 9999999.99",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"nQtdSucata",,,,,,,"Quantidade",1)
+
+	TGet():New(001,270,{|u| If(PCount()>0,cItemPedCompra:=u,cItemPedCompra)}  ,oPnlGet,050,012,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cItemPedCompra",,,,,,,"Item Ped.Comp",1)
+	TGet():New(001,330,{|u| If(PCount()>0,cNumPedCompra:=u,cNumPedCompra)}  ,oPnlGet,060,012,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cNumPedCompra",,,,,,,"Num.Ped.Comp",1)
+
+	oGetOperacao := TGet():New(001,400,{|u| If(PCount()>0,cOperSucata:=u,cOperSucata)}  ,oPnlGet,020,12,"@!",{|| pesquisaTes(cOperSucata)},,,,,,.T.,,,{|| .T.},,,,.F.,,,"cOperSucata",,,,,,,"Cod.Oper.",1)
+	oGetOperacao :cF3 := "DJ"
+
+	oGetTes := TGet():New(001,430,{|u| If(PCount()>0,cTesSucata:=u,cTesSucata)}  ,oPnlGet,020,12,"@!",,,,,,,.T.,,,{|| .T.},,,,.F.,,,"cTesSucata",,,,,,,"TES",1)
+	oGetTes :cF3 := "SF4"
+
+	TGet():New(001,460,{|u| If(PCount()>0,cCfopSucata:=u,cCfopSucata)}  ,oPnlGet,020,12,"@!",,,,,,,.T.,,,{|| .F.},,,,.F.,,,"cCfopSucata",,,,,,,"CFOP",1)
+
+	TButton():New( 005 , 505 , "Confirmar" , oPnlGet , {|| IIF(confirmarProcesso(),oDlgSucata:End(),)} , 040 , 014 , , , .T. , .T. , , "Confirmar" )
+	TButton():New( 005 , 555 , "Cancelar"  , oPnlGet , {|| oDlgSucata:End()} , 040 , 014 , , , .T. , .T. , , "Cancelar"  )
+
+	alimentarBrowser()
+
+	oDlgSucata:lEscClose := .F.
+	oDlgSucata:lCentered := .T.
+
+	oDlgSucata:Activate(,,,.T.,)
+
+Return
+
+/*/
+	Confirmar o processos Sucata
+/*/
+Static Function confirmarProcesso()
+	Local lRet 				:= .T.	as logical
+	Local lGeradoSucesso	:= .T.	as logical
+
+	If !( validaCampos() )
+		Return .F.
+	Endif
+
+	Begin Transaction
+
+		If !gerarItensEstoque()
+			lGeradoSucesso := .F.
+		Endif
+
+		If ( lGeradoSucesso == .T.) .And. ( !gerarTransferenciaSaldos())
+			lGeradoSucesso := .F.
+		Endif
+
+		If ( lGeradoSucesso == .T.) .And. ( !gerarAlteracaoPedido())
+			lGeradoSucesso := .F.
+		Endif
+
+		If ( lGeradoSucesso == .T. )
+			FWAlertSuccess("Pedido alterado com sucesso!",cTitulo)
+		Else
+			DisarmTransaction()
+			errosLogs()
+		Endif
+
+	End Transaction
+
+Return lRet
+
+/*/
+	Gerar alteração do pedido
+/*/
+Static Function gerarAlteracaoPedido()
+	Local lRet 			:= .T.	as logical
+	Local aAutoCab		:= {}	as array
+	Local aAutoItens	:= {}	as array
+	Local aRecord		:= {}	as array
+	Local nPosItem		:= 0	as numeric
+	Local nTotalPedido	:= 0	as numeric
+	Local aTamanhoCampo	:= {}	as array
+	Local cMsgErro		:= ""	as character
+	Local cItem			:= ""	as character
+	Local aErrosLog		:= {}	as array
+	Local nRegLog		:= 0	as numeric
+	Local nLinha		:= 0	as numeric
+
+	lMsErroAuto 	:= .F.
+	lMsHelpAuto    	:= .T.
+	lAutoErrNoFile	:= .T.
+
+	nLinha			:= oBrwSucata:NAT
+	nPosItem		:= GdFieldPos("C6_ITEM")
+	aTamanhoCampo	:= FWTamSX3("C6_ITEM")
+	cItem			:= Strzero((Val(aCols[Len(aCols),nPosItem])+1),aTamanhoCampo[1])
+	aTamanhoCampo	:= FWTamSX3("C6_VALOR")
+	nTotalPedido	:= Round((nPrcSucata * nQtdSucata),aTamanhoCampo[2])
+
+	aAdd(aAutoCab, {"C5_FILIAL" 	, FWxFilial("SC5")	, Nil})
+	aAdd(aAutoCab, {"C5_NUM"    	, SC5->C5_NUM       , Nil})
+	aAdd(aAutoCab, {"C5_TIPO"   	, SC5->C5_TIPO      , Nil})
+	aAdd(aAutoCab, {"C5_CLIENTE"	, SC5->C5_CLIENTE   , Nil})
+	aAdd(aAutoCab, {"C5_LOJACLI"	, SC5->C5_LOJACLI   , Nil})
+	aAdd(aAutoCab, {"C5_LOJAENT"	, SC5->C5_LOJAENT   , Nil})
+	aAdd(aAutoCab, {"C5_CONDPAG"	, SC5->C5_CONDPAG   , Nil})
+
+	aAdd(aRecord, {"C6_ITEM"   	, cItem  							, Nil})
+	aAdd(aRecord, {"C6_PRODUTO"	, cCodigoSucata						, Nil})
+	aAdd(aRecord, {"C6_QTDVEN" 	, nQtdSucata  						, Nil})
+	aAdd(aRecord, {"C6_QTDLIB" 	, 0      							, Nil})
+	aAdd(aRecord, {"C6_PRCVEN" 	, nPrcSucata 						, Nil})
+	aAdd(aRecord, {"C6_PRUNIT" 	, nPrcSucata 						, Nil})
+	aAdd(aRecord, {"C6_VALOR"  	, nTotalPedido  					, Nil})
+	aAdd(aRecord, {"C6_OPER"   	, cOperSucata   					, Nil})
+	aAdd(aRecord, {"C6_TES"    	, cTesSucata    					, Nil})
+	aAdd(aRecord, {"C6_ENTREG" 	, dDataBase     					, Nil})
+	aAdd(aRecord, {"C6_NUMPCOM"	, cNumPedCompra 					, Nil})
+	aAdd(aRecord, {"C6_ITEMPC" 	, cItemPedCompra					, Nil})
+	aAdd(aRecord, {"C6_PEDCLI" 	, "" 								, Nil})
+	aAdd(aRecord, {"C6_LOCAL"  	, aDadosSucata[nLinha,POS_LOCAL]	, Nil})
+	aAdd(aRecord, {"C6_LOTECTL"	, aDadosSucata[nLinha,POS_LOTECTL]	, Nil})
+	aAdd(aRecord, {"C6_DTVALID"	, aDadosSucata[nLinha,POS_VALIDADE]	, Nil})
+	aAdd(aRecord, {"C6_LOCALIZ"	, aDadosSucata[nLinha,POS_ENDERECO]	, Nil})
+	aAdd(aRecord, {"C6_ZPESO"	, nQtdSucata						, Nil})
+	aAdd(aRecord, {"C6_ZPESOBT"	, nQtdSucata						, Nil})
+
+	aAdd(aAutoItens,aRecord)
+
+	MsExecAuto( {|x,y,z| MATA410(x,y,z) } , aAutoCab, aAutoItens, OPERACAO_ALTERACAO )
+
+	If ( lMsErroAuto == .T.)
+		cMsgErro := "Erro ao alterar o pedido venda." + CRLF
+		aErrosLog := GetAutoGrLog()
+
+		For nRegLog := 1 to Len(aErrosLog)
+			cMsgErro += aErrosLog[nRegLog] + CRLF
+		Next
+
+		aAdd(aErroLog,{3,cMsgErro,"Erro ao alterar o pedido venda.",cNumPedVenda,cCodCliente,cLojCliente})
+		lRet := .F.
+	EndIf
+
+Return lRet
+
+/*/
+	Gerar transferencia saldos
+/*/
+Static Function gerarTransferenciaSaldos()
+	Local lRet 			:= .T.	as logical
+	Local nLinha		:= 0	as numeric
+	Local aAutoCab		:= {}	as array
+	Local aLinha		:= {}	as array
+	Local cMsgErro		:= ""	as character
+	Local cDocumento	:= ""	as character
+	Local cItem			:= ""	as character
+	Local cUmProduto	:= ""	as character
+	Local cUmSucata		:= ""	as character
+	Local cDescSucata	:= ""	as character
+	Local aErrosLog		:= {}	as array
+	Local nRegLog		:= 0	as numeric
+
+	lMsErroAuto 	:= .F.
+	lMsHelpAuto    	:= .T.
+	lAutoErrNoFile	:= .T.
+
+	nLinha			:= oBrwSucata:NAT
+	cDocumento  	:= NextNumero("SD3",1,"D3_DOC",.T.)
+	cItem			:= StrZero(1,2)
+	cUmProduto		:= Posicione("SB1", 1, FWxFilial("SB1") + aDadosSucata[nLinha,POS_PRODUTO], "B1_UM")
+	cUmSucata		:= Posicione("SB1", 1, FWxFilial("SB1") + cCodigoSucata , "B1_UM")
+	cDescSucata		:= Posicione("SB1", 1, FWxFilial("SB1") + cCodigoSucata , "B1_DESC")
+
+	aAdd(aAutoCab,{cDocumento,dDataBase})
+
+	aAdd(aLinha,{"ITEM"			, cItem,Nil})
+	aAdd(aLinha,{"D3_COD"		, aDadosSucata[nLinha,POS_PRODUTO]	, Nil})
+	aAdd(aLinha,{"D3_DESCRI"	, aDadosSucata[nLinha,POS_DESCRICAO], Nil})
+	aAdd(aLinha,{"D3_UM"		, cUmProduto						, Nil})
+	aAdd(aLinha,{"D3_LOCAL"		, aDadosSucata[nLinha,POS_LOCAL]	, Nil})
+	aAdd(aLinha,{"D3_LOCALIZ"	, aDadosSucata[nLinha,POS_ENDERECO]	, Nil})
+
+	aAdd(aLinha,{"D3_COD"		, cCodigoSucata						, Nil})
+	aAdd(aLinha,{"D3_DESCRI"	, cDescSucata						, Nil})
+	aAdd(aLinha,{"D3_UM"		, cUmSucata 						, Nil})
+	aAdd(aLinha,{"D3_LOCAL"		, aDadosSucata[nLinha,POS_LOCAL]	, Nil})
+	aAdd(aLinha,{"D3_LOCALIZ"	, aDadosSucata[nLinha,POS_ENDERECO] , Nil})
+
+	aAdd(aLinha,{"D3_NUMSERI"	, ""								, Nil})
+	aAdd(aLinha,{"D3_LOTECTL"	, aDadosSucata[nLinha,POS_LOTECTL]	, Nil})
+	aAdd(aLinha,{"D3_NUMLOTE"	, ""								, Nil})
+	aAdd(aLinha,{"D3_DTVALID"	, aDadosSucata[nLinha,POS_VALIDADE] , Nil})
+	aAdd(aLinha,{"D3_POTENCI"	, 0									, Nil})
+	aAdd(aLinha,{"D3_QUANT"		, nQtdSucata						, Nil})
+	aAdd(aLinha,{"D3_QTSEGUM"	, 0									, Nil})
+	aAdd(aLinha,{"D3_ESTORNO"	, ""								, Nil})
+	aAdd(aLinha,{"D3_NUMSEQ"	, ""								, Nil})
+
+	aAdd(aLinha,{"D3_LOTECTL"	, aDadosSucata[nLinha,POS_LOTECTL]	, Nil})
+	aAdd(aLinha,{"D3_NUMLOTE"	, ""								, Nil})
+	aAdd(aLinha,{"D3_DTVALID"	, aDadosSucata[nLinha,POS_VALIDADE] , Nil})
+	aAdd(aLinha,{"D3_ITEMGRD"	, ""								, Nil})
+
+	aAdd(aLinha,{"D3_CODLAN"	, ""								, Nil})
+	aAdd(aLinha,{"D3_CODLAN"	, ""								, Nil})
+
+	aAdd(aAutoCab,aLinha)
+
+	MSExecAuto({|x,y| mata261(x,y)},aAutoCab,OPERACAO_INCLUSAO)
+
+	If ( lMsErroAuto == .T.)
+		cMsgErro := "Erro ao gerar transferencia." + CRLF
+		aErrosLog := GetAutoGrLog()
+
+		For nRegLog := 1 to Len(aErrosLog)
+			cMsgErro += aErrosLog[nRegLog] + CRLF
+		Next
+
+		aAdd(aErroLog,{3,cMsgErro,"Erro ao gerar transferencia.",cNumPedVenda,cCodCliente,cLojCliente})
+		lRet := .F.
+	EndIf
+
+Return lRet
+
+/*/
+	Gera Itens de Estoque
+/*/
+Static Function gerarItensEstoque()
+	Local lRet 		:= .T.	as logical
+	Local nLinha	:= 0	as numeric
+	Local aAutoCab	:= {}	as array
+	Local cMsgErro	:= ""	as character
+	Local aErrosLog	:= {}	as array
+	Local nRegLog	:= 0	as numeric
+
+	dbSelectArea("SB9")
+	SB9->(dbSetorder(1))
+
+	lMsErroAuto 	:= .F.
+	lMsHelpAuto    	:= .T.
+	lAutoErrNoFile	:= .T.
+	nLinha			:= oBrwSucata:NAT
+
+	If !dbseek(FWxFilial("SB9")+cCodigoSucata+aDadosSucata[nLinha,POS_LOCAL])
+
+		aAdd(aAutoCab,{"B9_FILIAL"	, xFilial("SB9") 					,Nil})
+		aAdd(aAutoCab,{"B9_COD"	 	, cCodigoSucata	       				,Nil})
+		aAdd(aAutoCab,{"B9_LOCAL"	, aDadosSucata[nLinha,POS_LOCAL]	,Nil})
+
+		MsExecAuto({|x,y,z|MATA220(x,y,z)},aAutoCab,OPERACAO_INCLUSAO)
+
+		If ( lMsErroAuto == .T.)
+			cMsgErro := "Erro ao gerar itens estoque." + CRLF
+			aErrosLog := GetAutoGrLog()
+
+			For nRegLog := 1 to Len(aErrosLog)
+				cMsgErro += aErrosLog[nRegLog] + CRLF
+			Next
+
+			aAdd(aErroLog,{3,cMsgErro,"Erro ao gerar itens estoque.",cNumPedVenda,cCodCliente,cLojCliente})
+			lRet := .F.
+		EndIf
+
+	EndIf
+
+Return lRet
+
+/*/
+	Valida os campos de entrada
+/*/
+Static Function validaCampos()
+	Local lRet		:= .T.	as logical
+	Local nLinha	:= 0	as numeric
+
+	nLinha	:= oBrwSucata:NAT
+	
+	If Empty(cCodigoSucata)
+		FWAlertWarning("Código do produto sucata não foi informado!",cTitulo)
+		Return .F.
+	EndIf
+
+	If ( nPrcSucata == 0 )
+		FWAlertWarning("Preço unitário sucata não foi informado!",cTitulo)
+		Return .F.
+	Endif
+
+	If ( nQtdSucata == 0 )
+		FWAlertWarning("Quantidade sucata não foi informado!",cTitulo)
+		Return .F.
+	Endif
+
+	If Empty(cOperSucata)
+		FWAlertWarning("Código da operação da sucata não foi informado!",cTitulo)
+		Return .F.
+	EndIf
+
+	If Empty(cTesSucata)
+		FWAlertWarning("TES da sucata não foi informado!",cTitulo)
+		Return .F.
+	EndIf
+
+	If Empty(aDadosSucata) .Or. Alltrim(aDadosSucata[1,1]) == ""
+		FWAlertWarning("Lote(s) do ID da Bobina não encontrado!",cTitulo)
+		Return .F.
+	Endif
+
+	If  ( nQtdSucata > aDadosSucata[nLinha,POS_SALDO] )
+		FWAlertWarning("Quantidade informada maior que o saldo!",cTitulo)
+		Return .F.
+	Endif
+
+	dbSelectArea("SF4")
+	dbSetOrder(1)
+
+	If !( dbSeek(FWxFilial("SF4")+cTesSucata) ) .Or. !( SF4->F4_TIPO == "S" )
+		FWAlertWarning("TES de saida invalido ou nao informado! ",cTitulo)
+		Return .F.
+	Endif
+
+	dbSelectArea("SB1")
+	dbSetOrder(1)
+	If !dbSeek(FWxFilial("SB1")+cCodigoSucata)
+		FWAlertWarning("Produto SUCATA não localizado!",cTitulo)
+		Return .F.
+	Endif
+
+	If !( SB1->B1_LOCALIZ == "S" )
+		FWAlertWarning("Produto SUCATA sem controle de endereço!",cTitulo)
+		Return .F.
+	Endif
+
+
+Return lRet
+
+/*/
+	Preencher TWBrowser com dados da bobina
+/*/
+Static Function alimentarBrowser()
+	Local cAlias 		:= ""		as character
+	Local cQuery 		:= ""		as character
+	Local dDateValidade	:= CTod("")	as date
+	Local nSaldoProduto	:= 0		as numeric
+
+	aDadosSucata := {}
+
+	dbSelectArea("SB8")
+	dbSetOrder(3)
+	If dbSeek(FWxFilial("SB8")+ cProdutoPedido + cLocal + SC5->C5_ZLOTCTL)
+		dDateValidade := SB8->B8_DTVALID
+	EndIf
+
+	cQuery := getQrySaldoEndereco()
+
+	cAlias 	:= MpSysOpenQuery(cQuery)
+
+	dbSelectArea(cAlias)
+
+	If ( (cAlias)->(!EOF()) )
+
+		While !(cAlias)->(EOF())
+
+			nSaldoProduto := (cAlias)->BF_QUANT - (cAlias)->BF_EMPENHO
+
+			aAdd( aDadosSucata , {;
+				(cAlias)->BF_FILIAL		,;
+				cProdutoPedido     		,;
+				(cAlias)->BF_LOCAL		,;
+				nSaldoProduto 			,;
+				(cAlias)->BF_LOTECTL	,;
+				(cAlias)->BF_NUMLOTE    ,;
+				(cAlias)->BF_LOCALIZ    ,;
+				cDescricaoProd          ,;
+				dDateValidade  			;
+				})
+
+			(cAlias)->(dbSkip())
+
+		Enddo
+
+	EndIf
+
+	(cAlias)->(dbCloseArea())
+
+	If Empty(aDadosSucata)
+		aAdd( aDadosSucata , {;
+			AvKey("","BF_FILIAL")	,;
+			AvKey("","BF_PRODUTO")	,;
+			AvKey("","BF_LOCAL")	,;
+			0						,;
+			AvKey("","BF_LOTECTL")	,;
+			AvKey("","BF_NUMLOTE")  ,;
+			AvKey("","BF_LOCALIZ")  ,;
+			AvKey("","C6_DESCRI")   ,;
+			CTOD("")  				;
+			})
+	Endif
+
+	oBrwSucata:SetArray(aDadosSucata)
+
+	oBrwSucata:bLine := {|| { ;
+		aDadosSucata[oBrwSucata:nAt,01] ,;
+		aDadosSucata[oBrwSucata:nAt,02] ,;
+		aDadosSucata[oBrwSucata:nAt,03] ,;
+		aDadosSucata[oBrwSucata:nAt,04] ,;
+		aDadosSucata[oBrwSucata:nAt,05] ,;
+		aDadosSucata[oBrwSucata:nAt,06] ,;
+		aDadosSucata[oBrwSucata:nAt,07] ,;
+		aDadosSucata[oBrwSucata:nAt,08] ,;
+		aDadosSucata[oBrwSucata:nAt,09] }}
+
+	oBrwSucata:Refresh()
+
+Return
+
+/*/
+	Query filtrar saldo produto pedido
+/*/
+Static Function getQrySaldoEndereco()
+	Local cQuery := ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += " 	BF_FILIAL" + CRLF
+	cQuery += " 	,BF_LOCAL" + CRLF
+	cQuery += " 	,BF_QUANT" + CRLF
+	cQuery += " 	,BF_EMPENHO" + CRLF
+	cQuery += " 	,BF_LOTECTL" + CRLF
+	cQuery += " 	,BF_NUMLOTE" + CRLF
+	cQuery += " 	,BF_LOCALIZ" + CRLF
+	cQuery += " FROM " + CRLF
+	cQuery += " 	" + RetSqlTab("SBF") + CRLF
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	1 = 1 " + CRLF
+	cQuery += " 	AND " + RetSqlFil("SBF") + CRLF
+	cQuery += "   	AND BF_LOTECTL = " + ValToSql(SC5->C5_ZLOTCTL)  +  CRLF
+	cQuery += "   	AND BF_PRODUTO = " + ValToSql(cProdutoPedido) + CRLF
+	cQuery += " 	AND " + RetSqlDel("SBF") + CRLF
+	cQuery += " ORDER BY BF_LOCALIZ " + CRLF
+
+Return cQuery
+
+/*/
+	localiza TES pela função
+	MaTesInt(2,,M->C5_CLIENT,M->C5_LOJAENT,If(M->C5_TIPO$'DB',"F","C"),M->C6_PRODUTO,"C6_TES")
+/*/
+Static Function pesquisaTes(cCodOper)
+
+	If !Empty(cCodigoSucata)
+
+		dbSelectArea("SB1")
+		dbSetOrder(1)
+
+		If dbSeek(FWxFilial("SB1")+cCodigoSucata)
+			cTesSucata := MaTesInt(2,cCodOper,SC5->C5_CLIENT,SC5->C5_LOJAENT,If(SC5->C5_TIPO$'DB',"F","C"),cCodigoSucata)
+			If !Empty(cTesSucata)
+				dbSelectArea("SF4")
+				dbSetOrder(1)
+				If dbSeek(FWxFilial("SF4")+cTesSucata)
+					cCfopSucata := SF4->F4_CF
+				Else
+					cCfopSucata := ""
+				EndIf
+			Else
+				cCfopSucata := ""
+			EndIf
+		Endif
+	EndIf
+
+Return .T.
+
+/*/
+	Consultar codigo produto sucata
+/*/
+Static Function pesquisaProdutoSucata()
+	Local lRet := .T.	as logical
+
+	dbSelectArea("SB1")
+	dbSetOrder(1)
+
+	If !Empty(cCodigoSucata)
+		If !dbSeek(FWxFilial("SB1")+cCodigoSucata)
+			FWAlertWarning("Produto SUCATA não localizado!",cTitulo)
+			lRet := .F.
+		Endif
+	Endif
+
+Return lRet
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+
+	aadd(aDadosCampos, {"TITERRO"   	, "Erro"   		, "C", 100, 00, ""})
+	aadd(aDadosCampos, {"C5_NUM"		, "No. Pedido"	, "C", 006, 00, ""})
+	aadd(aDadosCampos, {"C5_CLIENTE"    , "Cliente"		, "C", 006, 00, ""})
+	aadd(aDadosCampos, {"C5_LOJACLI"	, "Loja" 		, "C", 004, 00, ""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return

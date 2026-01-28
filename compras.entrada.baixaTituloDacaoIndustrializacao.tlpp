@@ -1,0 +1,121 @@
+#include "totvs.ch"
+#include "protheus.ch"
+
+namespace compras.entrada
+
+/*/ {Protheus.doc} BaixaTituloDacaoIndustrializacao
+
+Baixa titulo de venda por dação retorno de industrializacao
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 13/11/2025
+@version P12
+@database ORACLE
+/*/
+User Function BaixaTituloDacaoIndustrializacao()
+	Local cChaveTitulo 			:= ""	as character
+	Local cMsgErro				:= ""	as character
+	Local aTituloBaixa			:= {}	as array
+	Local aErrosLog				:= {}	as array
+	Local nRegLog				:= 0	as numeric
+
+	Private lMsErroAuto 		:= .F.	as logical
+	Private lMsHelpAuto    		:= .T.	as logical
+	Private lAutoErrNoFile 		:= .T.	as logical
+	Private aErroLog			:= {}	as array
+
+	Default cNumNotaFiscal      := ""
+	Default cSerieNotaFiscal    := ""
+	Default cClienteNota		:= ""
+	Default cLojaNota			:= ""
+	Default cPrefixoNota		:= ""
+
+	If podeExecutar()
+
+		Begin Transaction
+
+			dbSelectArea("SE1")
+			SE1->(dbSetOrder(2))
+			cChaveTitulo := cClienteNota+cLojaNota+cPrefixoNota+cNumNotaFiscal
+
+			If SE1->(dbSeek(FWxFilial("SE1")+cChaveTitulo))
+				While (!SE1->(Eof()) ) .And. ( SE1->E1_FILIAL == FWxFilial("SE1") ) .And. ;
+						( SE1->(E1_CLIENTE+E1_LOJA+E1_PREFIXO+E1_NUM) == cChaveTitulo )
+
+					If !( SE1->E1_SALDO == 0 )
+
+						aTituloBaixa := {}
+
+						aAdd(aTituloBaixa,{"E1_FILIAL"    ,SE1->E1_FILIAL   ,Nil})
+						aAdd(aTituloBaixa,{"E1_PREFIXO"   ,SE1->E1_PREFIXO  ,Nil})
+						aAdd(aTituloBaixa,{"E1_NUM"       ,SE1->E1_NUM      ,Nil})
+						aAdd(aTituloBaixa,{"E1_PARCELA"   ,SE1->E1_PARCELA  ,Nil})
+						aAdd(aTituloBaixa,{"E1_TIPO"      ,SE1->E1_TIPO     ,Nil})
+						aAdd(aTituloBaixa,{"E1_CLIENTE"   ,SE1->E1_CLIENTE	,Nil})
+						aAdd(aTituloBaixa,{"E1_LOJA"      ,SE1->E1_LOJA     ,Nil})
+						aAdd(aTituloBaixa,{"AUTMOTBX"     ,"DAC"            ,Nil})
+
+						MSExecAuto({|x,y| Fina070(x,y)},aTituloBaixa,3)
+
+						If lMsErroAuto
+							cMsgErro := "Erro ao baixar o título por Dação" + CRLF
+							aErrosLog := GetAutoGrLog()
+							
+							For nRegLog := 1 to Len(aErrosLog)
+								cMsgErro += aErrosLog[nRegLog] + CRLF
+							Next
+							
+							Aadd(aErroLog,{3,cMsgErro,"Erro ao baixar o título por Dação",SE1->E1_PREFIXO,SE1->E1_NUM,SE1->E1_PARCELA})
+							DisarmTransaction()
+							errosLogs()
+							Exit
+						Endif
+
+					Endif
+					SE1->(dbSkip())
+				EndDo
+			Endif
+
+		End Transaction
+
+	Endif
+
+Return
+
+/*/
+	Valida se pode executar
+/*/
+Static Function podeExecutar()
+	Local lRet      := .F.  as logical
+
+	Begin Sequence
+
+		If !( FwIsInCallStack("COMPRAS.ENTRADA.U_DEVOLUCAOINDUSTRIALIZACAO") )
+			Break
+		EndIf
+
+		lRet := .T.
+
+	End Sequence
+
+Return lRet
+
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+	Local cTitulo		:= ""	as character
+
+	cTitulo := "Baixa Título Beneficiamento Industrialização"
+
+	aadd(aDadosCampos, {"TITERRO"   	, "Erro"   		, "C", 100, 00, ""})
+	aadd(aDadosCampos, {"E1_PREFIXO"	, "Prefixo"		, "C", 003, 00, ""})
+	aadd(aDadosCampos, {"E1_NUM"    	, "No.Titulo"	, "C", 009, 00, ""})
+	aadd(aDadosCampos, {"E1_PARCELA" 	, "Parcela" 	, "C", 020, 00, ""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return

@@ -1,0 +1,7 @@
+*.log
+*.tmp
+*.bak
+*.exe
+*.dll
+/.vs
+/node_modules

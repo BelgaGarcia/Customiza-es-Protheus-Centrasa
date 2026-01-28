@@ -1,0 +1,39 @@
+#include "protheus.ch"
+
+namespace faturamento.pedido.refaturamento
+
+/*/ {Protheus.doc} ValidaManutencaoPedido
+
+Validar se pedido de venda pode ser excluido,alterado ou copia, caso seja gerada via refaturamento
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 09/12/2025
+@version P12
+@database ORACLE
+/*/
+User Function ValidaManutencaoPedido()
+	Local lRet  := .T.  as logical
+
+	Default lExluirPVRefaturamento	:= .F.
+
+	If !( lExluirPVRefaturamento == .T. )
+	
+		dbSelectArea("SZ7")
+		SZ7->(dbSetOrder(5))
+
+		If ( SZ7->(dbSeek(FWxFilial("SZ7")+SC5->C5_NUM)) ) .And. ( SZ7->Z7_STATUS == "2")
+
+			If ( ALTERA == .T. )
+				FWAlertWarning("Pedido Venda não pode ser Alterado."+CRLF+"Gerado pelo processo de refaturamento.","Estorno de Transferência")
+			ElseIf !( INCLUI ) .And. !( ALTERA )
+				FWAlertWarning("Pedido Venda não pode ser Excluido."+CRLF+"Gerado pelo processo de refaturamento.","Estorno de Transferência")
+			ElseIf INCLUI .And. IsInCallStack("A410COPIA")
+				FWAlertWarning("Pedido Venda não pode ser copiado."+CRLF+"Gerado pelo processo de refaturamento.","Estorno de Transferência")
+			Endif
+
+			lRet := .F.
+		Endif
+	Endif
+
+Return lRet

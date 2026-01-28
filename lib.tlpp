@@ -1,0 +1,220 @@
+#include "totvs.ch"
+#include "protheus.ch"
+#include "fwbrowse.ch"
+#include "topconn.ch"
+
+namespace lib
+
+/*/{Protheus.doc} User Function ShowLogGrid
+
+Função que mostra log
+
+@type  Function
+@author Elcilei Lopes
+@since  18/07/2024
+@version version
+
+@Obs
+    Parametro 
+       aLogs
+         Legenda = 1 p/ Red 2 p/ Blue 3 p/ Yello
+         {Legenda,Msg,Campo 1, Campo 2, Campo 3, Etc}
+
+       aDadosCampos 
+         Campo 1
+         [1][1] - Titulo
+         [1][2] - Tipo Campo
+         [1][3] - Tamanho
+         [1][4] - Descimal
+         [1][5] - Mascara
+         [..] - Etc outros campos
+
+/*/
+User Function ShowLogGrid(cTitulo,aLogs,aDadosCampos)
+
+	Local aColumns  := {}   as array
+	Local oBrowse   := Nil  as object
+	Local nReg      := 0    as numeric
+
+	Private cAliasTmp   := ""   as Character
+
+	if !( geraTabelaTMP(aDadosCampos,aLogs) )
+		Return .F.
+	Endif
+
+	oDlg            := MSDialog():New( 092,232,585,1181,cTitulo,,,.F.,,,,,,.T.,,,.T. )
+	oGrpBrowse      := TGroup():New( 001,004,225,468,"",oDlg,CLR_BLACK,CLR_WHITE,.T.,.F. )
+	oBtnCancelar    := TButton():New( 230,430,"Cancelar",oDlg,{||oDlg:End()},037,012,,,,.T.,,"",,,,.F. )
+
+	oBrowse := FWBrowse():New()
+	oBrowse:SetDataTable( .T. )
+	oBrowse:SetAlias( cAliasTmp )
+	oBrowse:SetOwner( oGrpBrowse )
+	oBrowse:SetDescription( cTitulo )
+	oBrowse:AddLegend( cAliasTmp + "->LEGENDA == 1","GREEN")
+	oBrowse:AddLegend( cAliasTmp + "->LEGENDA == 2","YELLOW")
+	oBrowse:AddLegend( cAliasTmp + "->LEGENDA == 3","RED")
+	oBrowse:SetDoubleClick({|| mostraMensagem(cTitulo)})
+
+	For nReg := 1 To Len(aDadosCampos)
+
+		AAdd( aColumns, FWBrwColumn():New() )
+
+		aColumns[Len(aColumns)]:SetData( &("{ || " + cAliasTmp+"->" + aDadosCampos[nReg,1] + " }") )
+		aColumns[Len(aColumns)]:SetTitle( aDadosCampos[nReg,2] )
+		aColumns[Len(aColumns)]:SetType( aDadosCampos[nReg,3] )
+		aColumns[Len(aColumns)]:SetSize( aDadosCampos[nReg,4] )
+		aColumns[Len(aColumns)]:SetDecimal( aDadosCampos[nReg,5] )
+		aColumns[Len(aColumns)]:SetPicture( aDadosCampos[nReg,6] )
+		aColumns[Len(aColumns)]:SetID( aDadosCampos[nReg,1] )
+
+	Next nReg
+
+	oBrowse:SetColumns(aColumns)
+	oBrowse:Activate()
+
+	ACTIVATE MSDIALOG oDlg  CENTERED
+
+Return
+
+/*/ 
+	Mostra Mensagem
+/*/
+Static Function mostraMensagem(cTitulo)
+
+	Local oFont01       := nil  as object
+	Local oDlgLog       := nil  as object
+	Local oLogMsg       := nil  as object
+	Local oBtnCancelar  := nil  as object
+	Local cLogMsg       := ""   as character
+
+	cLogMsg         := (cAliasTmp)->MSG
+
+	oFont01         := TFont():New( "Segoe UI",0,-13,,.F.,0,,400,.F.,.F.,,,,,, )
+	oDlgLog         := MSDialog():New( 092,232,690,1074,cTitulo,,,.F.,,,,,,.T.,,,.T. )
+	oLogMsg         := TMultiGet():New( 000,005,{|u| If(PCount()>0,cLogMsg:=u,cLogMsg)},oDlgLog,412,274,oFont01,,CLR_BLACK,CLR_WHITE,,.T.,"",,,.F.,.F.,.T.,,,.F.,,  )
+
+	oBtnCancelar    := TButton():New( 285,380,"Cancelar",oDlgLog,{|| oDlgLog:End()},037,012,,,,.T.,,"",,,,.F. )
+
+	oDlgLog:Activate(,,,.T.)
+
+Return
+
+/*/
+	Gerar tabela TMP
+/*/
+Static Function geraTabelaTMP(aDadosCampos,aLogs)
+	Local lRet              := .T.  as logical
+	Local aFields			:= {}   as array
+	Local oTableCab		  	:= Nil  as object
+	Local nReg              := 0    as numeric
+	Local nRegCampos        := 0    as numeric
+
+	cAliasTmp   := GetNextAlias()
+	oTableCab	:= FWTemporaryTable():New( cAliasTmp )
+
+	Aadd(aFields,{"LEGENDA","N",1,0,""})
+	Aadd(aFields,{"MSG","M",10,0,""})
+
+	For nReg := 1 To Len(aDadosCampos)
+		aAdd(aFields,{aDadosCampos[nReg,1] , aDadosCampos[nReg,3] ,aDadosCampos[nReg,4]	,aDadosCampos[nReg,5],aDadosCampos[nReg,6] })
+	Next
+
+	oTableCab:SetFields( aFields )
+	oTableCab:Create()
+
+	For nReg := 1 To Len(aLogs)
+
+		RecLock(cAliasTmp, .T.)
+
+		For nRegCampos := 1 To Len(aFields)
+
+			&("(cAliasTmp)->"+aFields[nRegCampos,1]) := aLogs[nReg,nRegCampos]
+
+		Next nRegCampos
+
+		(cAliasTmp)->( MsUnLock())
+
+	Next nReg
+
+Return lRet
+
+/*/
+	Rotina Genérica para Retornar o Banco de Dados utilizado
+/*/
+User Function isMSSQL()
+
+	Local cBD	:= AllTrim(Upper(TCGetDB()))
+	Local lRet 	:= .F.
+
+	If cBD $ "MSSQL7"
+		lRet:= .T.
+	Else
+		lRet:= .F.
+	Endif
+
+Return lRet
+
+/*
+	Recupera o maior Número na Tabela CB0 - Próximo Número
+*/
+User Function buscaCB0()
+	Local cSQL      := ""
+	Local cAlias	:= ""
+	Local cUltNum	:= ""
+
+	cSQL := getQrybuscaCB0()
+
+	TcQuery cSQL New Alias (cAlias:=GetNextAlias())
+
+	dbSelectArea(cAlias)
+	If (cAlias)->(!EOF())
+		cUltNum := AllTrim(Soma1((cAlias)->ULTNUM))
+	Else
+		cUltNum := AllTrim(Soma1((cAlias)->ULTNUM))
+	Endif
+
+	(cAlias)->(dbCloseArea())
+
+Return cUltNum
+
+/*
+	Define a Consulta para Buscar o último Código da CB0
+*/
+Static Function getQrybuscaCB0()
+	Local cQuery	:= ""	as character
+
+	lIsMssql	:= lib.u_isMSSQL()
+
+	If lIsMssql
+		cQuery += " SELECT TOP 1 " + CRLF
+		cQuery += " 	CB0_CODETI AS ULTNUM " + CRLF
+		cQuery += " FROM " + CRLF
+		cQuery += " 	" + RetSqlTab("CB0") + " WITH (NOLOCK) " + CRLF
+		cQuery += " WHERE " + CRLF
+		cQuery += "	1=1 " + CRLF
+		cQuery += "	AND " + RetSqlFil("CB0") + CRLF
+		cQuery += " 	AND " + RetSqlDel("CB0") + CRLF
+		cQuery += " ORDER BY " + CRLF
+		cQuery += " 	CB0_CODETI DESC " + CRLF
+	Else
+		cQuery += " SELECT " + CRLF
+		cQuery += " 	SUBQRY.* " + CRLF
+		cQuery += " FROM( " + CRLF
+		cQuery += " 	SELECT " + CRLF
+		cQuery += " 		CB0_CODETI AS ULTNUM " + CRLF
+		cQuery += " 	FROM " + CRLF
+		cQuery += " 		" + RetSqlTab("CB0") + CRLF
+		cQuery += " 	WHERE " + CRLF
+		cQuery += "		1=1 " + CRLF
+		cQuery += "		AND " + RetSqlFil("CB0") + CRLF
+		cQuery += " 		AND " + RetSqlDel("CB0") + CRLF
+		cQuery += " ORDER BY " + CRLF
+		cQuery += " 	CB0_CODETI DESC " + CRLF
+		cQuery += " ) SUBQRY " + CRLF
+		cQuery += " WHERE " + CRLF
+		cQuery += " 	1=1 " + CRLF
+		cQuery += " FETCH FIRST 1 ROWS ONLY " + CRLF
+	EndIf
+
+Return cQuery

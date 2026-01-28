@@ -1,0 +1,178 @@
+#include "totvs.ch"
+#include "protheus.ch"
+#include "topconn.ch
+
+namespace compras.entrada
+
+/*/ {Protheus.doc} DevolucaoIndustrializacao
+
+Preencher os dados do documento de entrada conforme nota
+de saída de industrialização
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 13/11/2025
+@version P12
+@database ORACLE
+/*/
+User Function DevolucaoIndustrializacao()
+	Local aPergs			    := {}	as array
+
+	Private cNumNotaFiscal      := ""   as character
+	Private cSerieNotaFiscal    := ""   as character
+	Private cClienteNota		:= ""   as character
+	Private cLojaNota			:= ""   as character
+	Private cPrefixoNota		:= ""   as character
+	Private aAreas				:= {}	as array
+
+	aAreas := Lj7GetArea({"SA1","SF2","SD2","SE1"})
+
+	aAdd(aPergs,{1, "No. Nota Fiscal"   , Space(09),"","","","",80,.T. })
+	aAdd(aPergs,{1, "Serie Nota Fiscal" , Space(03),"","","","",40,.T. })
+
+	If ParamBox(aPergs, "Informe os parâmetros nota fiscal saída")
+
+		cNumNotaFiscal      := StrZero(Val(MV_PAR01),9)
+		cSerieNotaFiscal    := MV_PAR02
+
+		geraDocumentoEntrada()
+
+	Endif
+
+Return
+
+/*/
+	Gerar documento de entrada
+/*/
+Static Function geraDocumentoEntrada()
+	Local aCabDocumento    	:= {}								as array
+	Local aLinha    		:= {}								as array
+	Local aItensDocumento	:= {}								as array
+	Local cCondPagamento	:= GetNewPar("FS_CONPGIN","001")	as character
+	Local cCodTes			:= GetNewPar("FS_COTESIN","001")	as character
+	Local cMsgQuantidade	:= ""								as character
+	Local cMsgRetorno		:= ""								as character
+	Local nQuantidade		:= 0								as numeric
+	Local nTotalItem		:= 0								as numeric
+	Local nPesoItem			:= 0								as numeric
+
+	cNumNotaFiscal      := AvKey(cNumNotaFiscal,"F2_DOC")
+	cSerieNotaFiscal    := AvKey(cSerieNotaFiscal,"F2_SERIE")
+
+	dbSelectArea("SF2")
+	SF2->(dbSetOrder(1))
+	If !SF2->(dbSeek(FWxFilial("SF2")+cNumNotaFiscal+cSerieNotaFiscal))
+		FWAlertWarning("Nota fiscal não encontrada", "Devolução de Nota Industrializada")
+		Return .F.
+	Endif
+
+	cClienteNota		:= SF2->F2_CLIENTE
+	cLojaNota			:= SF2->F2_LOJA
+	cPrefixoNota		:= SF2->F2_PREFIXO
+
+	dbSelectArea("SA1")
+	SA1->(dbSetOrder(1))
+	If !SA1->(dbSeek(FWxFilial("SA1")+cClienteNota+cLojaNota))
+		FWAlertWarning("Cliente do documento não encontrada", "Devolução de Nota Industrializada")
+		Return .F.
+	Endif
+
+	dbSelectArea("SD1")
+	SD1->(dbSetOrder(19))
+	If ( SD1->(dbSeek(FWxFilial("SD1")+cNumNotaFiscal+cSerieNotaFiscal+cClienteNota+cLojaNota)) )
+		cMsgRetorno := "Já existe retorno do documento informado." + CRLF
+		cMsgRetorno += "No. Documento :"+SD1->D1_DOC + CRLF
+		cMsgRetorno += "Serie Documento :"+SD1->D1_SERIE + CRLF
+		FWAlertWarning(cMsgRetorno , "Devolução de Nota Industrializada")
+		Return .F.
+	Endif
+
+	aAdd( aCabDocumento, { "F1_DOC"    , CriaVar("F1_DOC",.F.)		, Nil } )
+	aAdd( aCabDocumento, { "F1_SERIE"  , CriaVar("F1_SERIE",.F.)	, Nil } )
+	aAdd( aCabDocumento, { "F1_TIPO"   , "B"                  		, Nil } )
+	aAdd( aCabDocumento, { "F1_FORNECE", cClienteNota				, Nil } )
+	aAdd( aCabDocumento, { "F1_LOJA"   , cLojaNota	   	    		, Nil } )
+	aAdd( aCabDocumento, { "F1_EMISSAO", dDataBase           		, Nil } )
+	aAdd( aCabDocumento, { "F1_FORMUL" , "S"                 		, Nil } )
+	aAdd( aCabDocumento, { "F1_ESPECIE", "SPED"						, Nil } )
+	aAdd( aCabDocumento, { "F1_EST"	   , SA1->A1_EST				, Nil } )
+	aAdd( aCabDocumento, { "F1_COND"   , cCondPagamento				, Nil } )
+
+	dbSelectArea("SD2")
+	SD2->(dbSetOrder(3))
+
+	If SD2->(dbSeek(FWxFilial("SD2")+SF2->F2_DOC+SF2->F2_SERIE+cClienteNota+cLojaNota))
+		while (!SD2->(eof())) .And. (SD2->D2_FILIAL == FWxFilial("SD2")) .And. ( SD2->D2_DOC == SF2->F2_DOC) .And.;
+				(SD2->D2_SERIE == SF2->F2_SERIE ) .And. ( SD2->D2_CLIENTE == cClienteNota ) .And. (SD2->D2_LOJA == cLojaNota)
+
+			aLinha := {}
+
+			nQuantidade 	:= SD2->D2_QUANT - SD2->D2_QTDEDEV
+			nTotalItem		:= Round(nQuantidade * SD2->D2_PRCVEN, 2)
+			cMsgQuantidade	:= ""
+			nPesoItem		:= getPesoItemPedido(SD2->D2_PEDIDO,SD2->D2_ITEMPV)
+
+			If !( nQuantidade > 0 )
+				cMsgQuantidade := "Quantidade do Item invalido."+CRLF
+				cMsgQuantidade += "Item :"+SD2->D2_ITEM+" - Produto :"+SD2->D2_COD+CRLF
+				cMsgQuantidade += "Quantidade :"+ Alltrim(Str(nQuantidade))
+				FWAlertWarning(cMsgQuantidade, "Devolução de Nota Industrializada")
+				Return .F.
+			Endif
+
+			AAdd( aLinha, { "D1_COD"     , SD2->D2_COD    	, Nil } )
+			AAdd( aLinha, { "D1_QUANT"   , nQuantidade		, Nil } )
+			AAdd( aLinha, { "D1_VUNIT"   , SD2->D2_PRCVEN	, Nil })
+			AAdd( aLinha, { "D1_TOTAL"   , nTotalItem		, Nil } )
+			AAdd( aLinha, { "D1_TES" 	 , cCodTes 			, Nil } )
+			AAdd( aLinha, { "D1_UM"      , SD2->D2_UM 		, Nil } )
+			AAdd( aLinha, { "D1_LOTECTL" , SD2->D2_LOTECTL	, Nil } )
+			AAdd( aLinha, { "D1_DTVALID" , SD2->D2_DTVALID 	, Nil } )
+			AAdd( aLinha, { "D1_NFORI"   , SD2->D2_DOC		, Nil } )
+			AAdd( aLinha, { "D1_SERIORI" , SD2->D2_SERIE	, Nil } )
+			AAdd( aLinha, { "D1_ITEMORI" , SD2->D2_ITEM		, Nil } )
+			AAdd( aLinha, { "D1_ZPESO"	 , nPesoItem		, Nil } )
+
+			AAdd( aItensDocumento, aLinha)
+
+			SD2->(dbSkip())
+		Enddo
+
+		Lj7RestArea(aAreas)
+
+		Mata103( aCabDocumento, aItensDocumento , 3 , .T.)
+
+	Else
+		FWAlertWarning("Item do documento de saída não encontrado", "Devolução de Nota Industrializada")
+		Return .F.
+	EndIf
+
+Return
+
+/*/
+	Verificar o peso do item no pedido venda
+/*/
+Static Function getPesoItemPedido(cNumeroPV,cItemPV)
+	Local nRec			:= 0	as numeric
+	Local aAreaSc6		:= {}	as array
+
+	Default cNumeroPV	:= ""
+	Default cItemPV		:= ""
+
+
+	If Empty(cNumeroPV) .Or. Empty(cItemPV)
+		Return 0
+	Endif
+
+	aAreaSc6 := SC6->(GetArea())
+
+	dbSelectArea("SC6")
+	SC6->(dbSetOrder(1))
+
+	If SC6->(dbSeek(FWxFilial("SC6")+cNumeroPV+cItemPV))
+		nRec := SC6->C6_ZPESO
+	Endif
+
+	RestArea(aAreaSc6)
+
+Return nRec

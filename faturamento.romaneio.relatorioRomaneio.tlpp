@@ -1,0 +1,344 @@
+#include "tlpp-core.th"
+#include "totvs.ch"
+#include "rptdef.ch"
+
+namespace faturamento.romaneio
+
+/*/{Protheus.doc} relatorioRomaneio
+
+Relatorio de Romaneio de Carga
+
+@type Function
+@author Gabriel Goncalves
+@since 02/12/2024
+@version P12
+@database Oracle
+
+/*/
+User Function relatorioRomaneio()
+	Private cAlias
+	Private oPrint
+
+	Private oFont8		:= TFont():New("Arial"      ,09,08,,.F.,,,,.F.,.F.)
+	Private oFont10		:= TFont():New("Arial"      ,09,10,,.F.,,,,.F.,.F.)
+	Private oFont12N	:= TFont():New("Arial"      ,09,12,,.T.,,,,.F.,.F.)
+	Private oFont20N	:= TFont():New("Arial"      ,09,20,,.T.,,,,.F.,.F.)
+	Private oFont35N	:= TFont():New("Arial"      ,09,35,,.T.,,,,.F.,.F.)
+
+	If MsgYesNo("Imprimi o relatório para o romaneio: "+SZ5->Z5_DOC+"?", "Relatório")
+		Processa( {|| imprimirRomaneio() },"Aguarde...","Realizando Impressao...")
+	EndIf
+Return
+
+/*
+	Imprimir Romaneio
+*/
+Static Function imprimirRomaneio()
+	Local cNomeArquivo		:= "Romaneio_"+SZ5->Z5_DOC+".rel"
+	Local cLocal			:= "\spool"
+	Local lAdjustToLegacy	:= .F.
+	Local lDisableSetup		:= .F.
+
+	oPrint	:= FWMSPrinter():New(cNomeArquivo, IMP_PDF, lAdjustToLegacy, cLocal, lDisableSetup, , , , , , .F., )
+	oPrint:SetLandScape()
+	oPrint:setPaperSize( 9 ) // A4
+
+	gerarFolhaRomaneio()
+
+	oPrint:Preview()
+Return
+
+/*
+	Gerar Folha de Romaneio
+*/
+Static Function gerarFolhaRomaneio()
+	Local cLogo		:= FisxLogo("1")
+	Local nLinha	:= 10
+	Local nColuna	:= 10
+	Local nVertSize	:= oPrint:nVertSize()
+	Local nHorzSize	:= oPrint:nVertSize()
+
+	buscaDadosRomaneio()
+
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+	If (cAlias)->(!EoF())
+		oPrint:StartPage()
+
+		oPrint:SayBitMap(nLinha+10, 010, cLogo, 80, 60)
+
+		//oPrint:Box(nLinha, nColuna+90, nLinha+110, 485)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna+270, "ROMANEIO DE CARGA", oFont20N)
+		oPrint:Say(nLinha+20, nColuna+630, "DT:", oFont20N)
+		oPrint:Say(nLinha+20, nColuna+730, IIF(!Empty((cAlias)->Z5_DOCCLI), (cAlias)->Z5_DOCCLI, (cAlias)->Z5_DOC), oFont20N)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna+150, "Cliente:", oFont10)
+		oPrint:Say(nLinha+20, nColuna+200, (cAlias)->Z5_NOME, oFont10)
+		oPrint:Say(nLinha+20, nColuna+630, "Data:", oFont10)
+		oPrint:Say(nLinha+20, nColuna+730, DtoC(StoD((cAlias)->Z5_EMISSAO)), oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna+150, "Motorista:", oFont10)
+		oPrint:Say(nLinha+20, nColuna+200, (cAlias)->Z5_NOMEMOT, oFont10)
+		oPrint:Say(nLinha+20, nColuna+630, "Placa:", oFont10)
+		oPrint:Say(nLinha+20, nColuna+730, (cAlias)->Z5_PLACA, oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "Item", oFont10)
+		oPrint:Say(nLinha+20, nColuna+20, "Peso B", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "Peso L", oFont10)
+		oPrint:Say(nLinha+20, nColuna+80, "Qtd. Peças", oFont10)
+		oPrint:Say(nLinha+20, nColuna+125, "ID", oFont10)
+		oPrint:Say(nLinha+20, nColuna+165, "Inspeção", oFont10)
+		oPrint:Say(nLinha+20, nColuna+205, "Dimensão", oFont10)
+		oPrint:Say(nLinha+20, nColuna+425, "Código", oFont10)
+		oPrint:Say(nLinha+20, nColuna+480, "Armazém", oFont10)
+		//oPrint:Say(nLinha+20, nColuna+500, "Endereço", oFont10)
+		oPrint:Say(nLinha+20, nColuna+535, "Lote", oFont10)
+		oPrint:Say(nLinha+20, nColuna+590, "Observações", oFont10)
+		oPrint:Say(nLinha+20, nColuna+700, "Pedido", oFont10)
+		oPrint:Say(nLinha+20, nColuna+735, "Item", oFont10)
+		oPrint:Say(nLinha+20, nColuna+755, "Nota", oFont10)
+		oPrint:Say(nLinha+20, nColuna+805, "Serie", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		nLinha	+= 20
+
+		Do While (cAlias)->(!EoF())
+			oPrint:Say(nLinha+20, nColuna, (cAlias)->Z5_ITEM, oFont8)
+			oPrint:Say(nLinha+20, nColuna+20, AllTrim(Str((cAlias)->C6_ZPESOBT)), oFont8)
+			oPrint:Say(nLinha+20, nColuna+50, AllTrim(Str((cAlias)->C6_ZPESOBT)), oFont8)
+			oPrint:Say(nLinha+20, nColuna+80, AllTrim(Str(IIF((cAlias)->Z5_UM $ "KG/TL", (cAlias)->C6_ZQTDPLC, (cAlias)->Z5_QUANT))), oFont8)
+			oPrint:Say(nLinha+20, nColuna+125, (cAlias)->C5_ZLOTCTL, oFont8)
+			oPrint:Say(nLinha+20, nColuna+165, (cAlias)->Z5_CODINSP, oFont8)
+			oPrint:Say(nLinha+20, nColuna+205, (cAlias)->Z5_DESCRI, oFont8)
+			oPrint:Say(nLinha+20, nColuna+425, (cAlias)->Z5_COD, oFont8)
+			oPrint:Say(nLinha+20, nColuna+480, (cAlias)->Z5_LOCAL, oFont8)
+			//oPrint:Say(nLinha+20, nColuna+500, (cAlias)->Z5_LOCALIZ, oFont8)
+			oPrint:Say(nLinha+20, nColuna+535, (cAlias)->Z5_LOTECTL, oFont8)
+			//oPrint:Say(nLinha+20, nColuna+590, (cAlias)->Z5_OBS, oFont8)
+			oPrint:Say(nLinha+20, nColuna+700, (cAlias)->C5_NUM, oFont8)
+			oPrint:Say(nLinha+20, nColuna+735, (cAlias)->C6_ITEM, oFont8)
+			oPrint:Say(nLinha+20, nColuna+755, (cAlias)->Z5_NOTA, oFont8)
+			oPrint:Say(nLinha+20, nColuna+805, (cAlias)->Z5_SERIE, oFont8)
+
+			oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+			nLinha	+= 20
+
+			(cAlias)->(DbSkip())
+		EndDo
+
+		oPrint:Say(nLinha+20, nColuna+600, "Resposta", oFont10)
+
+		nLinha	+= 10
+		
+		oPrint:Say(nLinha+20, nColuna, "Item", oFont10)
+		oPrint:Say(nLinha+20, nColuna+250, "Check List", oFont10)
+
+		nLinha	+= 10
+
+		oPrint:Say(nLinha+20, nColuna+470, "1ª CONFERENCIA", oFont10)
+		oPrint:Say(nLinha+20, nColuna+670, "2ª CONFERENCIA", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "1", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "As condições do veículo atendem os requisitos de segurança? (lona, assoalho)", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "2", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "O caminhão apresenta estar em boas consições", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "3", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "Qual a situação da cnodição do material? Ex.: 'livre de umidade', 'livre de rasgos'", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "4", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "Como está o estado dos plásticos utilizados nos fardos? Ex.: sem rasgos, rasgados, pequenos", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "5", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "Todos os lotes estão identificados com etiqueta Centrsa?", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "6", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "A descrição do material está correta com o descrito no Romaneio e D.T.?", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "7", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "Qual a quantidade de fardos carregada?", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "8", oFont10)
+		oPrint:Say(nLinha+20, nColuna+50, "Como está acondição do tempo e a mesma está favorável para o transporte?", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+		oPrint:Line(nLinha+10,nColuna+30,nLinha+30,nColuna+30)
+		oPrint:Line(nLinha+10,nColuna+400,nLinha+30,nColuna+400)
+		oPrint:Line(nLinha+10,nColuna+620,nLinha+30,nColuna+620)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna+400, "Check List", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		nLinha	+= 20
+
+		oPrint:Say(nLinha+20, nColuna, "1ª CONFERENCIA (CONFERENTE)", oFont10)
+		oPrint:Say(nLinha+20, nColuna+400, "Data  ______/______/______", oFont10)
+		oPrint:Say(nLinha+20, nColuna+550, "Hora  ______ ______", oFont10)
+
+		nLinha	+= 10
+
+		oPrint:Say(nLinha+20, nColuna+650, "NF", oFont10)
+
+		nLinha	+= 10
+
+		oPrint:Say(nLinha+20, nColuna, "2ª CONFERENCIA (LOGISTICA)", oFont10)
+		oPrint:Say(nLinha+20, nColuna+400, "Data  ______/______/______", oFont10)
+		oPrint:Say(nLinha+20, nColuna+550, "Hora  ______ ______", oFont10)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		nLinha	+= 40
+
+		oPrint:Say(nLinha+30, nColuna+210, "CARREGAR LOTES EXATOS", oFont35N)
+
+		oPrint:Line(nLinha+50,0,nLinha+50,nVertSize)
+
+		nLinha	+= 40
+
+		oPrint:Say(nLinha+20, nColuna, "Assinatura Motorista", oFont12N)
+
+		oPrint:Line(nLinha+30,0,nLinha+30,nVertSize)
+
+		oPrint:EndPage()
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Buscar dados gerado pelo romaneio
+*/
+Static Function buscaDadosRomaneio()
+	Local cQuery	:= ""	as character
+
+	cQuery	:= getQueryRomaneio()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+Return
+
+/*
+	Monta a query para buscar os dados do romaneio
+*/
+Static Function getQueryRomaneio()
+	Local cQuery		:= ""
+	
+	cQuery := "SELECT " + CRLF
+	cQuery += "        * " + CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SZ5") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SB1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "	 		" + RetSqlFil("SB1") + CRLF
+	cQuery += " 	    AND B1_COD = Z5_COD " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += " LEFT JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    D2_FILIAL = Z5_FILIAL " + CRLF
+	cQuery += " 	    AND D2_DOC = Z5_NOTA " + CRLF
+	cQuery += " 	    AND D2_SERIE = Z5_SERIE " + CRLF
+	cQuery += " 	    AND D2_COD = Z5_COD " + CRLF
+	cQuery += " 	    AND D2_LOCAL = Z5_LOCAL " + CRLF
+	cQuery += " 	    AND D2_LOCALIZ = Z5_LOCALIZ " + CRLF
+	cQuery += " 	    AND D2_LOTECTL = Z5_LOTECTL " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " LEFT JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC5") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    C5_FILIAL = D2_FILIAL " + CRLF
+	cQuery += " 	    AND C5_NOTA = D2_DOC " + CRLF
+	cQuery += " 	    AND C5_SERIE = D2_SERIE " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC5") + CRLF
+
+	cQuery += " LEFT JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    C6_FILIAL = D2_FILIAL " + CRLF
+	cQuery += " 	    AND C6_NOTA = D2_DOC " + CRLF
+	cQuery += " 	    AND C6_SERIE = D2_SERIE " + CRLF
+	cQuery += " 	    AND C6_ITEM = D2_ITEMPV " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ5") + CRLF
+	cQuery += " 		AND Z5_DOC = '"+SZ5->Z5_DOC+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ5") + CRLF
+Return cQuery

@@ -1,0 +1,100 @@
+#include "totvs.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+#include "tbicode.ch"
+
+namespace sigacfg
+
+/*/{Protheus.doc} sequencialCadastroProdutos
+Controle sequencial Cadastro de Produtos
+@type function
+@author rodolfomagalhaes
+@since 12/06/2024
+/*/
+User Function sequencialCadastroProdutos(cConteudo, cCampo)
+
+	Local lGeracaoCodigoOK := .T.
+	Local cMensagemHelp    := ""
+	Local cQuery           := ""
+	Local cQryTmp          := ""
+	Local cGrupoProdutos   := ""
+	Local cCodigoInicial   := "00000001"
+
+	Default cConteudo := ""
+
+	cCampo := Alltrim(cCampo)
+	cConteudo := Alltrim(cConteudo)
+
+	If !Empty(cConteudo) .AND. Len(cConteudo) == 2
+
+		Do Case
+		Case cCampo == "B1_GRUPO"
+
+			If !Empty(M->B1_ZSUBGRU)
+				cConteudo := Substr(cConteudo,1,2)
+				M->B1_GRUPO := cConteudo
+				cGrupoProdutos := cConteudo + M->B1_ZSUBGRU
+			Else
+				M->B1_COD := space(TamSx3("B1_COD")[1])
+				Return .T.
+			EndIf
+
+		Case cCampo == "B1_ZSUBGRU"
+
+			If !Empty(M->B1_GRUPO)
+				cGrupoProdutos := Substr(alltrim(M->B1_GRUPO),1,2) + cConteudo
+			Else
+				M->B1_COD := space(TamSx3("B1_COD")[1])
+				Return .T.
+			EndIf
+
+		End Case
+
+		DbSelectArea("SBM")
+		SBM->(DbSetOrder(1))
+		If SBM->(DbSeek(FwxFilial("SBM")+M->B1_GRUPO))
+
+			DbSelectArea("SZ0")
+			SZ0->(DbSetOrder(2))
+			If SZ0->(DbSeek(FwxFilial("SZ0")+M->B1_ZSUBGRU))
+
+				If INCLUI
+
+					cQuery := "SELECT MAX(B1_COD) MAXCODIGOATUAL "+CRLF
+					cQuery += " FROM "+RetSqlTab("SB1") + " " + CRLF
+					cQuery += "	WHERE 1=1 "+CRLF
+					cQuery += "		AND " + RetSqlFil("SB1")+" "+CRLF
+					cQuery += "		AND " + RetSqlDel("SB1")+" "+CRLF
+					cQuery += "		AND B1_GRUPO = "+ValToSql(M->B1_GRUPO)+" "+CRLF
+					cQuery += "		AND B1_ZSUBGRU = "+ValToSql(M->B1_ZSUBGRU)+" "+CRLF
+
+					cQuery := ChangeQuery(cQuery)
+					cQryTmp := MPSysOpenQuery( cQuery )
+
+					M->B1_COD := IIF(!Empty((cQryTmp)->MAXCODIGOATUAL),SOMA1(Alltrim((cQryTmp)->MAXCODIGOATUAL)),cGrupoProdutos+cCodigoInicial)
+
+					(cQryTmp)->(DBCloseArea())
+				Else
+					cMensagemHelp := "Alteração do código do Grupo Não permitida!"
+					lGeracaoCodigoOK := .F.
+				EndIf
+			Else
+				cMensagemHelp := "Sub Grupo informado não existe!"
+				lGeracaoCodigoOK := .F.
+			EndIf
+
+		Else
+			cMensagemHelp := "Grupo informado não existe!"
+			lGeracaoCodigoOK := .F.
+		Endif
+
+	Else
+		lGeracaoCodigoOK := .F.
+		cMensagemHelp := "Informe um grupo de produtos válido."
+	EndIf
+
+	If !lGeracaoCodigoOK
+		FWAlertHelp("Grupo de Produtos inválido!", cMensagemHelp)
+	EndIf
+
+Return lGeracaoCodigoOK

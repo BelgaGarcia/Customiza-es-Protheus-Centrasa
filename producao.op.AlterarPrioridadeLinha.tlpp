@@ -1,0 +1,185 @@
+#include "totvs.ch"
+#include "topconn.ch"
+
+#define CLR_CINZACLARO  			    	16250871
+#define CLR_DARKGRENN    			    	28438
+#define CLR_DARKGREEN    			    	28438
+
+namespace producao.op
+
+/*/ {Protheus.doc} AlterarPrioridadeLinha
+
+Alterar prioridade e a máquina da O.P
+
+@type function
+@author Elcilei Lopes - DSM
+@since 25/09/2024
+@version P12
+@database ORACLE
+/*/
+User Function AlterarPrioridadeLinha(cAlias,nReg,nOpc)
+
+	Local aCoors        	:= {}		as array
+	Local oLayer         	:= Nil		as object
+	Local bOk           	:= {|| }	as codeblock
+	Local bCancel       	:= {|| }	as codeblock
+	Local oFont0			:= Nil		as object
+	Local oFont1     		:= Nil		as object
+	Local nCol				:= 0		as numeric
+	Local nLin				:= 5		as numeric
+	Local nLargura			:= 400		as numeric
+	Local nAltura			:= 150		as numeric
+	Local oLyPanelSC2		:= nil		as object
+	Local oPanelSC2			:= nil		as object
+	Local oDlgSC2			:= nil		as object
+	Local aPosPanel			:= {}		as array
+	Local lMemoria  		:= .T.		as logical
+	Local aCamposSC2		:= {}		as array
+	Local aAreaSC2          := {}		as array
+
+	Private cTabelaSC2		:= ""		as character
+	Private cTitleWindow	:= ""		as character
+	Private oMsmGetSC2		:= nil		as object
+
+	aAreaSC2    := SC2->(getArea())
+
+	dbSelectArea("SC2")
+	SC2->(dbSetOrder(1))
+
+	If ( SC2->(dbSeek(FwxFilial("SC2")+(cAlias)->TMP_ORDEM)) )
+		nReg 	:= SC2->(RecNo())
+	EndIf
+
+	If ( nReg == 0 )
+		Return
+	Endif
+
+	cTabelaSC2     	:= "SC2"
+
+	aCoors        	:= FWGetDialogSize( oMainWnd )
+	oLayer         	:= FWLayer():new()
+
+	bOk           	:= {|| Iif(salvarOP(cAlias),oDlgSC2:End(),) }
+	bCancel       	:= {|| oDlgSC2:End()}
+
+	oFont0			:= TFont():New("Arial",,14,.F.,.F.,5,.f.,5,.f.,.F.)
+	oFont1     		:= TFont():New("Arial",,14,.T.,.F.,5,.f.,5,.f.,.F.)
+	cTitleWindow	:= "Alterar Ordem de Producao"
+
+	DEFINE MSDIALOG oDlgSC2 TITLE cTitleWindow FROM aCoors[1], aCoors[2] To aCoors[3], aCoors[4] PIXEL
+
+	oLayer := FWLayer():New()
+
+	oLayer:init(oDlgSC2,.F.)
+
+	oLayer:addCollumn("COLUNA1" ,100,.F.)
+	oLayer:addWindow("COLUNA1","PANELSC2"	,"OP"		,90,.F.,.F.,{|| },,{|| })
+
+	oLyPanelSC		:= oLayer:getWinPanel("COLUNA1","PANELSC2")
+
+	oPanelSC2		:= TPanel():New(nLin,nCol,"",oLyPanelSC2,,,,,CLR_CINZACLARO,nLargura,nAltura,.T.,.F.)
+	oPanelSC2:Align	:= CONTROL_ALIGN_ALLCLIENT
+
+	Aadd(aPosPanel,oPanelSC2:NTOP+5)
+	Aadd(aPosPanel,oPanelSC2:NLEFT+5)
+	Aadd(aPosPanel,oPanelSC2:NBOTTOM-5)
+	Aadd(aPosPanel,oPanelSC2:NRIGHT-5)
+
+	aCamposSC2 				:= geraMsmGet(cTabelaSC2)
+
+	RegToMemory(cTabelaSC2, .F.)
+
+	oMsmGetSC2 				:= MsmGet():New(/*cTabelaSC2*/,nReg,nOpc,,,,aCamposSC2[1],aPosPanel,{"C2_PRIOR","C2_LINHA"},3,,,,oPanelSC2,,lMemoria,,,,,aCamposSC2[2],,,,)
+	oMsmGetSC2:oBox:align	:= CONTROL_ALIGN_ALLCLIENT
+
+	ACTIVATE MSDIALOG oDlgSC2 ON INIT EnchoiceBar(oDlgSC2, bOk , bCancel,,) CENTERED
+
+Return
+
+/*/
+	Gerar MsmGet
+/*/
+Static Function geraMsmGet(cAliasSC2)
+	Local aCpoEnch		:= {}		as array
+	Local lObrigatorio	:= .F.		as logical
+	Local bValidaCampo	:= {|| }	as codeblock
+
+	aField := {}
+
+	DbSelectArea("SX3")
+	DbSetOrder(1)
+	DbSeek(cAliasSC2)
+
+	While !Eof() .And. SX3->X3_ARQUIVO == cAliasSC2
+
+		If !(Alltrim(SX3->X3_CAMPO) $ "C2_FILIAL") .And. X3Uso(SX3->X3_USADO)
+			AADD(aCpoEnch,SX3->X3_CAMPO)
+
+			bValidaCampo	:= {|| .T.}
+			lObrigatorio := .F.
+
+			Aadd(aField, {X3TITULO(),;            // [1] - Titulo
+			SX3->X3_CAMPO,;                   // [2] - campo
+			SX3->X3_TIPO,;                    // [3] - Tipo
+			SX3->X3_TAMANHO,;                 // [4] - Tamanho
+			SX3->X3_DECIMAL,;                 // [5] - Decimal
+			SX3->X3_PICTURE,;                 // [6] - Picture
+			bValidaCampo,;	                  // [7] - Valid
+			lObrigatorio,;                    // [8] - Obrigat
+			SX3->X3_NIVEL,;                   // [9] - Nivel
+			SX3->X3_RELACAO,;                 // [10]- Inicializador Padrão
+			SX3->X3_F3,;                      // [11]- F3
+			SX3->X3_WHEN,;                    // [12]- when
+			.F.,;                             // [13]- visual
+			.F.,;                             // [14]- chave
+			SX3->X3_CBOX,;                    // [15]- box
+			Val(SX3->X3_FOLDER),;             // [16]- folder
+			.F.,;                             // [17]- nao alteravel
+			SX3->X3_PICTVAR,;                 // [18]- pictvar
+			SX3->X3_TRIGGER})                 // [19]- gatilho
+
+		Endif
+		DbSkip()
+	End
+
+Return {aCpoEnch,aField}
+
+
+/*/
+	Salvar a alteracao da OP
+/*/	
+Static Function salvarOP(cAlias)
+	Local lRet			:= .T.		as logical
+	Local cPrioridade	:= ""	as character
+	Local cLinha		:= ""	as character
+	Local aAreaTmp		:= {}	as array
+	Local cOrdemOP		:= ""	as character
+
+	cPrioridade	:= C2_PRIOR
+	cLinha		:= C2_LINHA
+	aAreaTmp	:= (cAlias)->(getArea())
+	cOrdemOP	:= (cAlias)->TMP_ORDEM
+
+	If ( SC2->(dbSeek(FwxFilial("SC2")+(cAlias)->TMP_ORDEM)) )
+		Reclock("SC2",.F.)
+		SC2->C2_PRIOR := cPrioridade
+		SC2->C2_LINHA := cLinha
+		SC2->(MsUnlock())
+	EndIf
+
+	(cAlias)->(dbSetOrder(3))
+
+	If (cAlias)->(dbSeek(cOrdemOP))
+		While !(cAlias)->(Eof()) .And. (cAlias)->TMP_ORDEM == cOrdemOP
+			Reclock(cAlias,.F.)
+			(cAlias)->C2_PRIOR := cPrioridade
+			(cAlias)->C2_LINHA := cLinha
+			(cAlias)->(MsUnlock())
+			(cAlias)->(dbSkip())
+		EndDo
+	Endif
+
+	RestArea(aAreaTmp)
+
+Return lRet
+

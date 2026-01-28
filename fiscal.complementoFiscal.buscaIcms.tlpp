@@ -1,0 +1,68 @@
+#include "totvs.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+#include "tbicode.ch"
+
+namespace fiscal.complementoFiscal
+
+/*/ {Protheus.doc} MGP022_CENTRASA_SMUD22_DF_BUSCA NF COMPLEMENTO ICMS
+Nome:       Módulo	Compras
+Processo:   Faturamento
+Subprocesso:        Verificação NF de Complemento ICMS
+Número e Nome DF:	MGP022_CENTRASA_SMUD22_DF_BUSCA NF COMPLEMENTO ICMS
+
+@type function/gatilho campo C6_NFORI
+@author Helerson - DSM
+@since 24/09/2024
+@version P12
+@database TCLOUD SQL
+/*/
+
+user Function buscaIcms()
+
+	Local cQuery         := ""	        as character
+	Local lRet           := .T.
+	Local nPosTES        := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_TES" })
+	Local nPosNFO        := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_NFORI" })
+
+	Local cTES := aCols[n,nPosTes]
+
+	Private cNFO   := aCols[n,nPosNFO]
+	Private cAlias := "" as character
+
+	DbSelectArea("SF4")
+	DbSetOrder(1)
+	If DbSeek(Fwxfilial("SF4") + cTES) .And. SF4->F4_PODER3 == "D"
+
+		cQuery := getQuery()
+
+		TCQUERY CQUERY NEW ALIAS(cAlias:=GetNextAlias())
+
+		dbSelectArea(cAlias)
+		(cAlias)->(dbGotop())
+		If ( (cAlias)->(!EOF()) )
+			cMsg := "NF de devolução deverá calcular ICMS, e por isso deve usar o Tipo de Operação " + Alltrim(getmv("ZV_C6OPER3"))
+			Help(,,"HELP-Centrasa",,cMsg,1,0)
+		EndIf
+
+		If ( Select(cAlias) > 0 )
+			(cAlias)->(dbCloseArea())
+		Endif
+	EndIf
+Return lRet
+
+/*/
+	Query ordem de producao
+/*/
+
+Static Function getQuery()
+	Local cQyery := ""	as character
+
+	cQyery += " SELECT * FROM "+RetSQLTab("SD1")+CRLF
+	cQyery += " WHERE "+RetSqlDel("SD1")+CRLF
+	cQyery += " AND "+RetSqlFil("SD1")+CRLF
+	cQyery += " AND D1_TIPO = 'I'" +CRLF
+	cQyery += " AND D1_NFORI = '" + cNFO + "'" +CRLF
+	cQyery += " AND D1_FILIAL  =  '" + FwXFilial("SD1")  + "'"  + CRLF
+
+Return cQyery

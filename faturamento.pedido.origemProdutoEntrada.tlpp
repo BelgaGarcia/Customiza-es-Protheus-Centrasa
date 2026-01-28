@@ -1,0 +1,70 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.pedido
+
+/*/
+{Protheus.doc} origemProdutoEntrada
+
+Gatilho no pedido de venda para buscar a origem do produto da NF de entrada
+
+@type Function
+@author Gabriel Goncalves
+@since 24/11/2024
+@version P12
+@database MSSQL
+/*/
+User Function origemProdutoEntrada()
+	Local cQuery		:= ""	as character
+	Local cAliasOrigem	:= ""	as character
+	Local nPosProduto	:= aScan(Aheader,{|x| AllTrim(x[2]) == "C6_PRODUTO"})	as integer
+	Local nPosLote		:= aScan(Aheader,{|x| AllTrim(x[2]) == "C6_LOTECTL"})	as integer
+	Local nPosClasfis	:= aScan(Aheader,{|x| AllTrim(x[2]) == "C6_CLASFIS"})	as integer
+	Local cClassfis		:= ""	as character
+	Local nRecord		:= 0	as integer
+
+	Private cCodigoProduto	:= ""	as character
+	Private cLoteProduto	:= ""	as character
+
+	For nRecord := 1 To Len(aCols)
+		cCodigoProduto	:= aCols[nRecord,nPosProduto]
+		cLoteProduto	:= aCols[nRecord,nPosLote]
+		cClassfis		:= aCols[nRecord,nPosClasfis]
+
+		If !Empty(cCodigoProduto) .And. !Empty(cLoteProduto)
+			cQuery := queryBuscarOrigemNF()
+			MPSysOpenQuery( cQuery, cAliasOrigem := GetNextAlias() )
+
+			DbSelectArea(cAliasOrigem)
+			(cAliasOrigem)->(DbGoTop())
+			If !((cAliasOrigem)->(EoF()))
+				aCols[nRecord,nPosClasfis]	:= SubStr((cAliasOrigem)->D1_CLASFIS,1,1) + SubStr(cClassfis,2)
+			EndIf
+
+			(cAliasOrigem)->(DbCloseArea())
+		EndIf
+	Next nRecord
+Return
+
+/*/
+	Query buscar origem produto da NF
+/*/
+Static Function queryBuscarOrigemNF()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D1_CLASFIS"		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD1") + CRLF
+	cQuery += " 		AND D1_TIPO		= 'N'" + CRLF
+	cQuery += " 		AND D1_COD		= '"+AllTrim(cCodigoProduto)+"'" + CRLF
+	cQuery += " 		AND D1_LOTECTL	= '"+AllTrim(cLoteProduto)+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
+Return cQuery

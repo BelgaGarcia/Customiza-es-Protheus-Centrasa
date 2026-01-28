@@ -1,0 +1,287 @@
+#include "tlpp-core.th"
+#include "totvs.ch"
+
+namespace faturamento.romaneio
+
+/*/{Protheus.doc} gerarRomaneio
+
+Tela de montagem do romaneio
+
+@type Function
+@author Gabriel Goncalves
+@since 02/12/2024
+@version P12
+@database MSSQL
+
+/*/
+User Function gerarRomaneio(oModel)
+	Private oDialogRomaneio		:= Nil	as object
+	Private oListaItens			:= Nil	as object
+	Private aItens		:= {}	as array
+	Private oCheckOk			:= LoadBitMap(GetResources(),"LBOK")
+	Private oCheckNo			:= LoadBitMap(GetResources(),"LBNO")
+	Private oPanel				:= Nil	as object
+	Private nRecNoSD2			:= 0	as integer
+	Private cCodigoRomaneio		:= ""	as character
+
+	Private oModelCabecalho		:= oModel:GetModel( "SZ5FORM" )	as object
+	Private oModelGrid			:= oModel:GetModel( "SZ5GRID" )	as object
+
+	If validaDados()
+		montaDialog()
+	EndIf
+Return
+
+/*
+	Valida os dados para busca das notas
+*/
+Static Function validaDados()
+	Local lRetorno	:= .T.
+
+	If Empty(oModelCabecalho:GetValue("Z5_CODCLI")) .Or. Empty(oModelCabecalho:GetValue("Z5_LOJACLI"))
+		lRetorno	:= .F.
+		FWAlertError("Dados do cliente não informados.", "Cliente")
+	EndIf
+Return lRetorno
+
+/*
+	Monta Dialog principal
+*/
+Static Function montaDialog()
+	Local bSelecionar  := {|| gerarRomaneioFaturamento(), oDialogRomaneio:DeActivate()}
+
+	oDialogRomaneio	:= FwDialogModal():New()
+	oDialogRomaneio:SetEscClose(.T.)
+	oDialogRomaneio:SetTitle('Seleção do romaneio')
+
+	//Seta a largura e altura da janela em pixel
+	oDialogRomaneio:SetPos(000, 000)
+	oDialogRomaneio:SetSize(280, 500)
+
+	oDialogRomaneio:CreateDialog()
+	oDialogRomaneio:AddCloseButton(Nil, 'Fechar')
+	oDialogRomaneio:AddButton("Selecionar", bSelecionar, "Selecionar", , .T., .F., .T., )
+
+	// Capturar o objeto do FwDialogModal para alocar outros objetos se necessário.
+	oPanel := oDialogRomaneio:GetPanelMain()
+
+	buscaItensRomaneio()
+	montaTelaRomaneio()
+
+	oDialogRomaneio:Activate()
+Return
+
+/*
+	Monta tela com as informações dos itens para romaneio
+*/
+Static Function montaTelaRomaneio()
+	oListaItens := TWBrowse():New(1, 1, 440, 265,,,, oPanel,,,,,,,,,,,, .F.,, .T.,, .F.,,,)
+	oListaItens:SetArray( aItens )
+
+	oListaItens:addColumn( TCColumn():New(""						, {||aItens[oListaItens:nAt,01]}, "@BMP"				, , , "LEFT" , 30, .T., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Documento"				, {||aItens[oListaItens:nAt,02]}, /*cPicture*/			, , , "LEFT" , 35, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Serie"					, {||aItens[oListaItens:nAt,03]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Item"					, {||aItens[oListaItens:nAt,04]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Produto"					, {||aItens[oListaItens:nAt,05]}, /*cPicture*/			, , , "LEFT" , 40, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Descrição"				, {||aItens[oListaItens:nAt,06]}, /*cPicture*/			, , , "LEFT" , 60, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("ID Bobina"				, {||aItens[oListaItens:nAt,07]}, /*cPicture*/			, , , "LEFT" , 60, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Inspeção"				, {||aItens[oListaItens:nAt,08]}, /*cPicture*/			, , , "LEFT" , 60, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("UM"						, {||aItens[oListaItens:nAt,09]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Quantidade"				, {||aItens[oListaItens:nAt,10]}, "9,999,999.9999"		, , , "RIGHT", 50, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Local"					, {||aItens[oListaItens:nAt,11]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Endereço"				, {||aItens[oListaItens:nAt,12]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaItens:addColumn( TCColumn():New("Lote"					, {||aItens[oListaItens:nAt,13]}, /*cPicture*/			, , , "LEFT" , 40, .F., .F., , , , , ))
+	//oListaItens:addColumn( TCColumn():New("RecNo SD2"				, {||aItens[oListaItens:nAt,14]}, /*cPicture*/			, , , "RIGHT", 30, .F., .F., , , , , ))
+
+	oListaItens:bLDblClick:= {|| selecionarItem() }
+	oListaItens:align		:= CONTROL_ALIGN_ALLCLIENT
+
+	oListaItens:SetArray( aItens )
+
+	refreshTela()
+Return
+
+/*
+	Refresh nas telas
+*/
+Static Function refreshTela()
+	//oDialogRomaneio:Refresh()
+	oListaItens:Refresh()
+Return
+
+/*
+	Busca os itens de nota para romaneio
+*/
+Static Function buscaItensRomaneio()
+	Local cQuery	:= ""	as character
+
+	cQuery	:= getQueryItensRomaneio()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+	If (cAlias)->(!EoF())
+		Do While (cAlias)->(!EoF())
+			aAdd(aItens,{oCheckNo, (cAlias)->D2_DOC, (cAlias)->D2_SERIE, (cAlias)->D2_ITEM, (cAlias)->D2_COD, (cAlias)->B1_DESC, (cAlias)->C5_ZLOTCTL, (cAlias)->C5_ZINSPE, (cAlias)->D2_UM, (cAlias)->D2_QUANT, (cAlias)->D2_LOCAL, (cAlias)->D2_LOCALIZ, (cAlias)->D2_LOTECTL})
+
+			(cAlias)->(DbSkip())
+		EndDo
+	Else
+		aAdd(aItens,{oCheckNo, " ", " ", " ", " ", " ", " ", " ", " ",  0, " ", " ", " "})
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Monta a query para buscar os itens de nota para romaneio
+*/
+Static Function getQueryItensRomaneio()
+	Local cQuery		:= ""
+	
+	cQuery := "SELECT " + CRLF
+	cQuery += "        D2_DOC " + CRLF
+	cQuery += "        ,D2_SERIE " + CRLF
+	cQuery += "        ,D2_ITEM " + CRLF
+	cQuery += "        ,D2_COD " + CRLF
+	cQuery += "        ,D2_UM " + CRLF
+	cQuery += "        ,D2_QUANT " + CRLF
+	cQuery += "        ,D2_LOCAL " + CRLF
+	cQuery += "        ,D2_LOCALIZ " + CRLF
+	cQuery += "        ,D2_LOTECTL " + CRLF
+	cQuery += "        ,B1_DESC " + CRLF
+	cQuery += "        ,C5_ZLOTCTL " + CRLF
+	cQuery += "        ,C5_ZINSPE " + CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SB1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "	 		" + RetSqlFil("SB1") + CRLF
+	cQuery += " 	    AND B1_COD = D2_COD " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC5") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    C5_FILIAL = D2_FILIAL " + CRLF
+	cQuery += " 	    AND C5_NOTA = D2_DOC " + CRLF
+	cQuery += " 	    AND C5_SERIE = D2_SERIE " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC5") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    C6_FILIAL = D2_FILIAL " + CRLF
+	cQuery += " 	    AND C6_NOTA = D2_DOC " + CRLF
+	cQuery += " 	    AND C6_SERIE = D2_SERIE " + CRLF
+	cQuery += " 	    AND C6_ITEM = D2_ITEMPV " + CRLF
+	cQuery += " 	    AND C6_ZSLDGER <> 'S' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SF4") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "	 		" + RetSqlFil("SF4") + CRLF
+	cQuery += " 	    AND F4_CODIGO = D2_TES " + CRLF
+	cQuery += " 	    AND F4_ESTOQUE = 'S' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SF4") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_ZROMAN = ' ' " + CRLF
+	cQuery += " 		AND D2_CLIENTE = '"+oModelCabecalho:GetValue("Z5_CODCLI")+"' " + CRLF
+	cQuery += " 		AND D2_LOJA = '"+oModelCabecalho:GetValue("Z5_LOJACLI")+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += "UNION ALL " + CRLF
+
+	cQuery += "SELECT " + CRLF
+	cQuery += "        '' AS D2_DOC " + CRLF
+	cQuery += "        ,'' AS D2_SERIE " + CRLF
+	cQuery += "        ,'' AS D2_ITEM " + CRLF
+	cQuery += "        ,BF_PRODUTO AS D2_COD " + CRLF
+	cQuery += "        ,B1_UM AS D2_UM " + CRLF
+	cQuery += "        ,BF_QUANT AS D2_QUANT " + CRLF
+	cQuery += "        ,BF_LOCAL AS D2_LOCAL " + CRLF
+	cQuery += "        ,BF_LOCALIZ AS D2_LOCALIZ " + CRLF
+	cQuery += "        ,BF_LOTECTL AS D2_LOTECTL " + CRLF
+	cQuery += "        ,B1_DESC " + CRLF
+	cQuery += "        ,'' AS C5_ZLOTCTL " + CRLF
+	cQuery += "        ,'' AS C5_ZINSPE " + CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SBF") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SB1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "	 		" + RetSqlFil("SB1") + CRLF
+	cQuery += " 	    AND B1_COD = BF_PRODUTO " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SA1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "	 		" + RetSqlFil("SA1") + CRLF
+	cQuery += " 	    AND A1_CGC = BF_LOCALIZ " + CRLF
+	cQuery += " 		AND A1_COD = '"+oModelCabecalho:GetValue("Z5_CODCLI")+"' " + CRLF
+	cQuery += " 		AND A1_LOJA = '"+oModelCabecalho:GetValue("Z5_LOJACLI")+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SA1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SBF") + CRLF
+	cQuery += " 		AND BF_ZROMAN = ' ' " + CRLF
+	cQuery += " 		AND BF_LOCAL LIKE 'Z%' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SBF") + CRLF
+Return cQuery
+
+/*
+	Marca/Desmarca o documento do romaneio
+*/
+Static Function selecionarItem()
+	If oListaItens:aArray[oListaItens:nAt,1] == oCheckNo
+		oListaItens:aArray[oListaItens:nAt,1] := oCheckOk
+	Else
+		oListaItens:aArray[oListaItens:nAt,1] := oCheckNo
+	EndIf
+Return
+
+/*
+	Gera romaneio de faturamento do itens selecionados
+*/
+Static Function gerarRomaneioFaturamento()
+	Local nPosItens	:= 1	as integer
+	Local nItemGrid	:= 1	as integer
+
+	nItemGrid := oModelGrid:Length()++
+
+	For nPosItens := 1 To Len(oListaItens:aArray)
+		If oListaItens:aArray[nPosItens,1] == oCheckOk
+			If oModelGrid:AddLine() == nItemGrid
+				oModelGrid:GoLine(nItemGrid)
+				
+				oModelGrid:SetValue("Z5_COD", oListaItens:aArray[nPosItens,5])
+				oModelGrid:SetValue("Z5_DESCRI", oListaItens:aArray[nPosItens,6])
+				oModelGrid:SetValue("Z5_UM", oListaItens:aArray[nPosItens,9])
+				oModelGrid:SetValue("Z5_QUANT", oListaItens:aArray[nPosItens,10])
+				oModelGrid:SetValue("Z5_LOCAL", oListaItens:aArray[nPosItens,11])
+				oModelGrid:SetValue("Z5_LOCALIZ", oListaItens:aArray[nPosItens,12])
+				oModelGrid:SetValue("Z5_LOTECTL", oListaItens:aArray[nPosItens,13])
+				oModelGrid:SetValue("Z5_CODINSP", oListaItens:aArray[nPosItens,8])
+				oModelGrid:SetValue("Z5_NOTA", oListaItens:aArray[nPosItens,2])
+				oModelGrid:SetValue("Z5_SERIE", oListaItens:aArray[nPosItens,3])
+				oModelGrid:SetValue("Z5_ITEMNF", oListaItens:aArray[nPosItens,4])
+
+				nItemGrid++
+			EndIf
+		EndIf
+	Next nPosItens
+
+	oModelGrid:GoLine(1)
+Return

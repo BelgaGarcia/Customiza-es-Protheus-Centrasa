@@ -1,0 +1,165 @@
+#include "totvs.ch"
+#Include "protheus.ch"
+
+namespace estoque.movimentointerno
+
+/*/ {Protheus.doc} Nfgerencial
+
+Gerar Movimento interno baixa Nota gerencial
+
+@type function
+@author
+@since 26/09/2024
+@version P12
+@database ORACLE
+/*/
+User Function Nfgerencial()
+	Local aAutoCab		    := {}	as array
+	Local aAutoItens	    := {}	as array
+	Local nRecord			:= 0 	as numeric
+	Local cProduto			:= ""	as character
+	Local cItem				:= ""	as character
+	Local nQuantidade		:= 0	as numeric
+	Local lRet				:= .T.	as logical
+
+	Private lMsErroAuto		:= .F.	as logical
+	Private lMsHelpAuto		:= .F.	as logical
+	Private lAutoErrNoFile	:= .F.	as logical
+	Private aErroLog		:= {}	as array
+	Private cNumeroNotaGer  := ""   as character
+	Private cSerieGer       := ""   as character
+	Private cForneceGer     := ""   as character
+	Private cLojaGer        := ""   as character
+	Private aItensGerencial	:= {}	as array
+
+	cNumeroNotaGer  := SF1->F1_ZNFGER 
+	cSerieGer       := SF1->F1_ZSERGER
+	cForneceGer     := SF1->F1_ZFORGER
+	cLojaGer        := SF1->F1_ZLOJGER
+
+	If (!Empty(SF1->F1_ZNFGER))
+
+		aAutoCab	:= getAutoCab()
+		aAutoItens 	:= getAutoItens()
+
+		MSExecAuto({|x,y,z| MATA241(x,y,z)},aAutoCab,aAutoItens,3)
+
+		If ( lMsErroAuto )
+			cMsg := "Erro ao realizar baixa do saldo no estoque ZZ."+CRLF+CRLF
+			cMsg += Mostraerro("C:")
+			Aadd(aErroLog,{3,cMsg,"Classificação Nota Gerencial",cNumeroNotaGer,cSerieGer,cForneceGer,cLojaGer})
+			lRet := .F.
+		else
+			dbSelectArea("SD1")
+			SD1->(dbSetOrder(1))
+			For nRecord := 1 To Len(aItensGerencial)
+
+				cItem			:= aItensGerencial[nRecord,1]
+				cProduto		:= aItensGerencial[nRecord,2]
+				nQuantidade		:= aItensGerencial[nRecord,3]
+
+				If ( SD1->(dbSeek(FwxFilial("SD1")+cNumeroNotaGer+cSerieGer+cForneceGer+cLojaGer+cProduto+cItem)))
+					RecLock("SD1",.F.)
+					SD1->D1_QTDEDEV := SD1->D1_QTDEDEV + nQuantidade
+					SD1->(MsUnlock()	)
+				Endif
+			Next
+		Endif
+
+		If ( Len(aErroLog) > 0 )
+			errosLogs()
+		Endif
+	Endif
+
+Return lRet
+
+/*
+	Monta o Cabeçalho da Rotina Automática
+*/
+Static Function getAutoCab()
+	Local aAutoCab 		:= {}   as array
+	Local cTm           := ""   as character
+	Local cDocumento    := ""   as character
+	Local cChaveObs		:= ""   as character
+
+	cDocumento  := NextNumero("SD3",1,"D3_DOC",.T.)
+	cTm         := GetNewPar("ZZ_TMNFGER","502")
+	cChaveObs	:= "Nf Gerencial: '"+SF1->F1_ZNFGER+"'"
+
+	aAdd( aAutoCab, { "D3_FILIAL"	, FWxFilial("SD3")  , Nil } )
+	aAdd( aAutoCab, { "D3_DOC"		, cDocumento   		, Nil } )
+	aAdd( aAutoCab, { "D3_EMISSAO"	, dDataBase			, Nil } )
+	aAdd( aAutoCab, { "D3_TM"	    , cTM				, Nil } )
+	aAdd( aAutoCab, { "D3_OBS"	    , cChaveObs			, Nil } )
+
+Return aAutoCab
+
+/*
+	Recupera os Campos dos Itens da Rotina Automática
+*/
+Static Function getAutoItens()
+	Local aRecord			:= {}		as array
+	Local aAutoItens		:= {}		as array
+	Local cEndereco         := ""   	as character
+	Local cArmazem			:= "" 		as character
+	Local nRecord			:= 0		as numeric
+	Local cCodigoProduto	:= ""		as character
+	Local cUm				:= ""		as character
+	Local cItem				:= ""		as character
+	Local nQtdDocumento		:= 0		as numeric
+	Local cLoteCtl			:= ""		as character
+	Local dDtValidade		:= Ctod("")	as date
+
+	dbSelectArea("SA1")
+	SA1->(dbSetOrder(1))
+	SA1->(dbSeek(FwxFilial("SA1")+cForneceGer+cLojaGer))
+	
+	cEndereco   := SA1->A1_CGC //GetNewPar("ZZ_ENDRGER","42956441002740")
+	cArmazem	:= GetNewPar("ZZ_ARMGERBM","ZZ")
+
+	For nRecord := 1 To Len(aCols)
+		If !( GdDeleted(nRecord,aHeader,aCols) )
+			aRecord 	:= {}
+
+			cCodigoProduto	:= GdFieldGet("D1_COD",nRecord)
+			cUm				:= GdFieldGet("D1_UM",nRecord)
+			nQtdDocumento	:= GdFieldGet("D1_QUANT",nRecord)
+			cLoteCtl		:= GdFieldGet("D1_LOTECTL",nRecord)
+			dDtValidade		:= GdFieldGet("D1_DTVALID",nRecord)
+			cItem			:= GdFieldGet("D1_ITEM",nRecord)
+
+			aAdd( aRecord, { "D3_COD"		,	cCodigoProduto	, NIL})
+			aAdd( aRecord, { "D3_UM"		,	cUm   			, NIL})
+			aAdd( aRecord, { "D3_QUANT"		,	nQtdDocumento	, NIL})
+			aAdd( aRecord, { "D3_LOCAL"		,	cArmazem      	, NIL})
+			aAdd( aRecord, { "D3_LOCALIZ"	,	cEndereco   	, NIL})
+			aAdd( aRecord, { "D3_LOTECTL"	,	cLoteCtl		, NIL})
+			aAdd( aRecord, { "D3_DTVALID"	,	dDtValidade		, NIL})
+
+			aAdd(aAutoItens,aRecord)
+
+			aAdd(aItensGerencial,{cItem,cCodigoProduto,nQtdDocumento})
+		Endif
+	Next
+
+Return aAutoItens
+
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+	Local cTitulo		:= ""	as character
+
+	cTitulo := "Classificação Nota Fiscal Gerencial"
+
+	AADD(aDadosCampos,{"TITERRO" 	,"Erro"			,"C",030,00,""})
+	AADD(aDadosCampos,{"F1_DOC" 	,"No.Documento"	,"C",009,00,""})
+	AADD(aDadosCampos,{"F1_SERIE" 	,"Serie"		,"C",003,00,""})
+	AADD(aDadosCampos,{"F1_FORNECE"	,"Forncedor"    ,"C",008,00,""})
+	AADD(aDadosCampos,{"F1_LOJA"	,"Loja"    		,"C",004,00,""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return

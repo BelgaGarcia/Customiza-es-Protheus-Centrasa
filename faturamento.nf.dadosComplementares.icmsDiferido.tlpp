@@ -1,0 +1,83 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.nf.dadosComplementares
+
+/*/{Protheus.doc} icmsDiferido
+
+Dados complementares na NF (ICMS Diferido).
+
+@type Function
+@author Gabriel Goncalves
+@since 28/09/2024
+@version P12
+@database MSSQL
+
+/*/
+User Function icmsDiferido()
+	Private cMensagemRetorno	:= ""		as character
+	Private cAliasICMS			:= ""		as character
+
+	buscaICMSDiferido()
+	montaMensagem()
+Return cMensagemRetorno
+
+/*
+	Busca valor ICMS diferido
+*/
+Static Function buscaICMSDiferido()
+	Local cQuery	:= ""	as character
+
+	cQuery := 	getQueryICMSDiferido()
+
+	MPSysOpenQuery( cQuery, cAliasICMS := GetNextAlias() )
+Return
+
+/*
+	Query busca valor ICMS diferido
+*/
+Static Function getQueryICMSDiferido()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        SUM(FT_ICMSDIF) FT_ICMSDIF "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SFT") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SA1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SA1") + CRLF
+	cQuery += " 	    AND A1_COD		= FT_CLIEFOR " + CRLF
+	cQuery += " 	    AND A1_LOJA		= FT_LOJA " + CRLF
+	cQuery += " 	    AND A1_GRPTRIB	= 'G02' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SA1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SFT") + CRLF
+	cQuery += " 		AND FT_NFISCAL	= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND FT_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND FT_CLIEFOR	= '"+SF2->F2_CLIENTE+"' " + CRLF
+	cQuery += " 		AND FT_LOJA		= '"+SF2->F2_LOJA+"' " + CRLF
+	cQuery += " 		AND FT_ICMSDIF	> 0 " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SFT") + CRLF
+Return cQuery
+
+/*
+	Monta Mensagem de retorno
+*/
+Static Function montaMensagem()
+	(cAliasICMS)->(DbGoTop())
+	If !(cAliasICMS)->(EoF())
+		If (cAliasICMS)->FT_ICMSDIF > 0
+			cMensagemRetorno	+=	" VALOR DO ICMS PARCIALMENTE DIFERIDO "+AllTrim(Transform((cAliasICMS)->FT_ICMSDIF,"@E 999,999,999.99"))
+			cMensagemRetorno	+=	" CONFORME PORTARIA SUTRI 763 ART. 428 ANEXO VIII DECRETO 48.589 22/03/23 RICMS/MG."
+		EndIf
+	EndIf
+	(cAliasICMS)->(DbCloseArea())
+Return

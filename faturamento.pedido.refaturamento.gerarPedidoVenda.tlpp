@@ -1,0 +1,191 @@
+#include "protheus.ch"
+
+#define 	OPERACAO_INCLUSAO	3
+
+namespace faturamento.pedido.refaturamento
+
+/*/ {Protheus.doc} GerarPedidoVenda
+
+Gerar pedido de venda gerado pelo refaturamento
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 09/12/2025
+@version P12
+@database ORACLE
+
+@return - lRet - Logial - Retorna se a operação foi realizada com sucesso
+/*/
+User Function GerarPedidoVenda()
+	Local lRet 				:= .T.	as logical
+	Local aAreaSD1			:= {}	as array
+	Local aAreaTmp			:= {}	as array
+	Local aAutoCab			:= {}	as array
+	Local aAutoItens		:= {}	as array
+
+	Local cMsgErro			:= ""	as character
+	Local aErrosLog			:= {}	as array
+	Local nRegLog			:= 0	as numeric
+
+	Private lMsErroAuto 	:= .F.	as logical
+	Private lMsHelpAuto    	:= .T.	as logical
+	Private lAutoErrNoFile	:= .T.	as logical
+
+	Default cPedidoVenda	:= ""
+
+	aAreaSD1	:= (cAliasSD1)->(getArea())
+	aAreaTmp	:= (cAliasTmpAjuste)->(getArea())
+
+	aAutoCab	:= getAutoCab()
+	aAutoItens 	:= getAutoItens()
+
+	MSExecAuto({|x,y,z|Mata410(x,y,z)}, aAutoCab, aAutoItens, OPERACAO_INCLUSAO)
+
+	If ( lMsErroAuto )
+
+		cMsgErro := "Erro ao gerar pedido de venda." + CRLF
+		aErrosLog := GetAutoGrLog()
+
+		For nRegLog := 1 to Len(aErrosLog)
+			cMsgErro += aErrosLog[nRegLog] + CRLF
+		Next
+
+		aAdd(aLogErro,{3,cMsgErro,"Erro ao gerar pedido de venda.",cNotaFiscal,cSerieNota,cCodFornecedor,cLojFornecedor})
+
+		lRet := .F.
+	Else
+		cPedidoVenda := SC5->C5_NUM
+	EndIf
+
+	RestArea(aAreaSD1)
+	RestArea(aAreaTmp)
+
+Return lRet
+
+/*
+	Monta o Cabeçalho da Rotina Automática Pedido de Venda
+*/
+Static Function getAutoCab()
+	Local aAutoCab 			:= {}								as array
+	Local cCondPgto			:= GetNewPar("FS_INTPGTO","001")	as character
+	//Local cVendedor			:= GetNewPar("FS_INTVEND","011807")	as character
+
+	aAdd( aAutoCab , { "C5_FILIAL" 	, FWxFilial("SC5")	,Nil } )
+	aAdd( aAutoCab , { "C5_TIPO"   	, "N"           ,Nil } )
+	aAdd( aAutoCab , { "C5_CLIENTE"	, cCodFornecedor		,Nil } )
+	aAdd( aAutoCab , { "C5_LOJACLI"	, cLojFornecedor		,Nil } )
+	aAdd( aAutoCab , { "C5_CLIENT"	, cCodFornecedor		,Nil } )
+	aAdd( aAutoCab , { "C5_LOJAENT"	, cLojFornecedor		,Nil } )
+	aAdd( aAutoCab , { "C5_EMISSAO"	, dDatabase		,Nil } )
+	aAdd( aAutoCab , { "C5_CONDPAG"	, cCondPgto		,Nil } )
+	//aAdd( aAutoCab , { "C5_VEND1"	, cVendedor		,Nil } )
+	//aAdd( aAutoCab , { "C5_TPFRETE" , "C"			,Nil } )
+	//aAdd( aAutoCab , { "C5_LIBEROK"	, "S"			,Nil } )
+	//aAdd( aAutoCab , { "C5_TPFRETE"	, "C"			,Nil } )
+//	aAdd( aAutoCab , { "C5_PESOL"	,  nPesoLiquido	,Nil } )
+//	aAdd( aAutoCab , { "C5_PBRUTO"	,  nPesoTotal	,Nil } )
+//	aAdd( aAutoCab , { "C5_VOLUME"	,  nVolumes		,Nil } )
+
+Return aAutoCab
+
+/*
+	Recupera os Campos dos Itens da Rotina Automática Pedido Venda
+*/
+Static Function getAutoItens()
+	Local aRecord			:= {}       as array
+	Local aAutoItens    	:= {}       as array
+	Local nQuantidade		:= 0		as numeric
+	Local nItem				:= 0		as numeric
+	Local nTamCampoItem		:= 0		as numeric
+	Local cItemAjuste		:= ""		as character
+	Local cProdutoAjuste	:= ""		as character
+	Local cItemPEdido		:= ""		as character
+	Local cArmazem			:= ""		as character
+	Local cCodidoTes		:= ""		as character
+	Local cCodigoTesSemLote	:= ""		as character
+	Local cLoteAjuste		:= ""		as character
+	Local cIdPoder3			:= ""		as character
+	Local nVlrUnitario		:= 0		as numeric
+	Local nVlrTotal			:= 0		as numeric
+	Local nPesoAjuste		:= 0		as numeric
+	Local dValidadeLote		:= CTOD("")	as date
+	Local aTamanhoCampo		:= {}		as array
+
+	aRecord 			:= {}
+	nTamCampoItem		:= FWTamSX3("C6_ITEM")[1]
+	cCodigoTesSemLote	:= GetNewPar("FS_TESRSLT","")
+
+	dbSelectArea("SF4")
+	SF4->(dbSetOrder(1))
+
+	(cAliasSD1)->(dbSetOrder(1))
+
+	(cAliasTmpAjuste)->(dbGotop())
+
+	While !(cAliasTmpAjuste)->(eof())
+
+		nQuantidade 	:= (cAliasTmpAjuste)->FS_QUANT
+		cItemAjuste		:= (cAliasTmpAjuste)->FS_ITEM
+		cProdutoAjuste	:= (cAliasTmpAjuste)->FS_PRODUTO
+		nVlrUnitario	:= (cAliasTmpAjuste)->FS_VUNIT
+		cArmazem		:= (cAliasTmpAjuste)->FS_LOCAL
+		dValidadeLote	:= (cAliasTmpAjuste)->FS_DTVALID
+		cLoteAjuste		:= (cAliasTmpAjuste)->FS_LOTEDES
+		nPesoAjuste		:= (cAliasTmpAjuste)->FS_PESO
+		nItem			++
+		cItemPEdido		:= StrZero(nItem,nTamCampoItem)
+		aRecord			:= {}
+		cIdPoder3		:= ""
+		cCodidoTes		:= GetNewPar("FS_TESPEDR","501")
+
+		(cAliasSD1)->(dbSeek(cItemAjuste))
+
+		If Empty(cLoteAjuste)
+			cCodidoTes := cCodigoTesSemLote
+		Endif
+
+		If ( SF4->(dbSeek(FWxFilial("SF4")+cCodidoTes))) .And. (SF4->F4_PODER3 $ "D/R")
+			cIdPoder3 := (cAliasSD1)->FS_NUMSEQ
+		Endif
+
+		If ( nQuantidade == 0 )
+			If (cAliasSD1)->(dbSeek(cProdutoAjuste))
+				nQuantidade := (cAliasSD1)->FS_QUANT
+			Endif
+		Endif
+
+		aTamanhoCampo	:= FWTamSX3("C6_PRCVEN")
+		nVlrUnitario	:= Round((nVlrUnitario ),aTamanhoCampo[2])
+
+		aTamanhoCampo	:= FWTamSX3("C6_VALOR")
+		nVlrTotal		:= Round((nVlrUnitario *  nQuantidade),aTamanhoCampo[2])
+
+		aAdd( aRecord, { "C6_ITEM"	,    cItemPEdido   				,Nil})
+		aAdd( aRecord, { "C6_PRODUTO"	, cProdutoAjuste			, NIL})
+		aAdd( aRecord, { "C6_QTDVEN"	, nQuantidade          		, NIL})
+		aAdd( aRecord, { "C6_PRCVEN"	, nVlrUnitario              , NIL})
+		aAdd( aRecord, { "C6_PRUNIT"	, nVlrUnitario				, NIL})
+		aAdd( aRecord, { "C6_VALOR"		, nVlrTotal  			 	, NIL})
+		aAdd( aRecord, { "C6_TES"		, cCodidoTes               	, NIL})
+		aAdd( aRecord, { "C6_LOCAL"     , cArmazem     				, NIL})
+		If !Empty(cLoteAjuste)
+			aAdd( aRecord, { "C6_LOTECTL"	, cLoteAjuste              	, NIL})
+			aAdd( aRecord, { "C6_DTVALID"	, dValidadeLote            	, NIL})
+		Endif
+		aAdd( aRecord, { "C6_ZPESO "	, nPesoAjuste            	, NIL})
+		aAdd( aRecord, { "C6_ZPESOBT"	, nPesoAjuste            	, NIL})
+
+		If !Empty(cIdPoder3)
+			aAdd( aRecord, { "C6_IDENTB6"	, cIdPoder3            	, NIL})
+			aAdd( aRecord, { "C6_NFORI" 	, (cAliasSD1)->FS_DOC 	, Nil})
+			aAdd( aRecord, { "C6_SERIORI"	, (cAliasSD1)->FS_SERIE , Nil})
+			aAdd( aRecord, { "C6_ITEMORI"	, (cAliasSD1)->FS_ITEM	, Nil})
+		Endif
+
+		aAdd(aAutoItens,aRecord)
+
+		(cAliasTmpAjuste)->(dbSkip())
+
+	Enddo
+
+Return aAutoItens

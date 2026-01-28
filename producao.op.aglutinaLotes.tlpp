@@ -1,0 +1,526 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace producao.op
+
+/*/{Protheus.doc} VVPCPA11
+
+Tela de aglutinacao de lotes da OP
+
+@type Function
+@author Gabriel  Goncalves
+@since 21/01/2025
+@version  P12
+@database Oracle
+
+/*/
+User Function aglutinaLotes(cAlias, nRegistro)
+	Private oDialogLotes		:= Nil	as object
+	Private oListaLotes			:= Nil	as object
+	Private aApontamentos		:= {}	as array
+	Private oCheckOk			:= LoadBitMap(GetResources(),"LBOK")
+	Private oCheckNo			:= LoadBitMap(GetResources(),"LBNO")
+	Private oPanel				:= Nil	as object
+	Private cLoteDestino		:= ""	as character
+	Private cLotesExcluidos		:= ""	as character
+
+	Private cAliasTela			:= cAlias	as character
+	Private nRegistroTela		:= nRegistro	as integer
+
+	montaDialog()
+Return
+
+/*
+	Monta Dialog principal
+*/
+Static Function montaDialog()
+	Local bAglutinar  := {|| aglutinarLotes(), oDialogLotes:DeActivate()}
+
+	oDialogLotes	:= FwDialogModal():New()
+	oDialogLotes:SetEscClose(.T.)
+	oDialogLotes:SetTitle('Seleção dos lotes')
+
+	//Seta a largura e altura da janela em pixel
+	oDialogLotes:SetPos(000, 000)
+	oDialogLotes:SetSize(215, 300)
+
+	oDialogLotes:CreateDialog()
+	oDialogLotes:AddCloseButton(Nil, 'Fechar')
+	oDialogLotes:AddButton("Aglutinar", bAglutinar, "Aglutinar", , .T., .F., .T., )
+
+	// Capturar o objeto do FwDialogModal para alocar outros objetos se necessário.
+	oPanel := oDialogLotes:GetPanelMain()
+
+	buscaApontamentos()
+	montaTelaLotes()
+
+	oDialogLotes:Activate()
+Return
+
+/*
+	Monta tela com as informações dos lotes
+*/
+Static Function montaTelaLotes()
+	oListaLotes := TWBrowse():New(1, 1, 305, 185,,,, oPanel,,,,,,,,,,,, .F.,, .T.,, .F.,,,)
+	oListaLotes:SetArray( aApontamentos )
+
+	oListaLotes:addColumn( TCColumn():New(""					, {||aApontamentos[oListaLotes:nAt,01]}, "@BMP"					, , , "LEFT" , 30, .T., .F., , , , , ))
+	oListaLotes:addColumn( TCColumn():New("Numero OP"			, {||aApontamentos[oListaLotes:nAt,02]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaLotes:addColumn( TCColumn():New("Lote"				, {||aApontamentos[oListaLotes:nAt,03]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaLotes:addColumn( TCColumn():New("Qtde.Produzida"		, {||aApontamentos[oListaLotes:nAt,04]}, "9,999,999.9999"		, , , "RIGHT", 50, .F., .F., , , , , ))
+	oListaLotes:addColumn( TCColumn():New("Peso"				, {||aApontamentos[oListaLotes:nAt,05]}, "9,999,999.9999"		, , , "RIGHT", 50, .F., .F., , , , , ))
+	oListaLotes:addColumn( TCColumn():New("Tabela"				, {||aApontamentos[oListaLotes:nAt,06]}, /*cPicture*/			, , , "LEFT" , 30, .F., .F., , , , , ))
+	oListaLotes:addColumn( TCColumn():New("RecnoSZ"				, {||aApontamentos[oListaLotes:nAt,07]}, "9999999"				, , , "RIGHT", 50, .F., .F., , , , , ))
+
+	oListaLotes:bLDblClick:= {|| selecionarLote() }
+	oListaLotes:align		:= CONTROL_ALIGN_ALLCLIENT
+
+	oListaLotes:SetArray( aApontamentos )
+
+	refreshTela()
+Return
+
+/*
+	Refresh nas telas
+*/
+Static Function refreshTela()
+	//oDialogLotes:Refresh()
+	oListaLotes:Refresh()
+Return
+
+/*
+	Busca os apontamentos realizados
+*/
+Static Function buscaApontamentos()
+	Local cQuery	:= ""	as character
+
+	cQuery	:= getQueryBuscaApontamentos()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+	If (cAlias)->(!EoF())
+		Do While (cAlias)->(!EoF())
+			aAdd(aApontamentos,{oCheckNo, (cAliasTela)->TMP_ORDEM, (cAlias)->LOTE, (cAlias)->QUANTIDADE, (cAlias)->PESO, (cAlias)->TABELASZ, (cAlias)->SZREC})
+
+			(cAlias)->(DbSkip())
+		EndDo
+	Else
+		aAdd(aApontamentos,{oCheckNo, " ", " ", 0, 0, " ", 0})
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query dos apontamentos
+*/
+Static Function getQueryBuscaApontamentos()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        Z3_LOTECTL LOTE "		+ CRLF
+	cQuery += "        ,Z3_QTDPECA QUANTIDADE "		+ CRLF
+	cQuery += "        ,Z3_PESOLIQ PESO "		+ CRLF
+	cQuery += "        ,'SZ3' TABELASZ "		+ CRLF
+	cQuery += "        ,SZ3.R_E_C_N_O_ SZREC "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SZ3") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ3") + CRLF
+	cQuery += " 		AND Z3_OP  = '"+AllTrim((cAliasTela)->TMP_ORDEM)+"'" + CRLF
+	cQuery += " 		AND Z3_APONTOK  = 'S'" + CRLF
+	cQuery += " 		AND Z3_AGLUTIN  <> 'S'" + CRLF
+	cQuery += " 		AND Z3_LOTECTL  <> ' '" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ3") + CRLF
+
+	cQuery += " UNION ALL "
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        Z4_LOTECTL LOTE "		+ CRLF
+	cQuery += "        ,Z4_QTDPECA QUANTIDADE "		+ CRLF
+	cQuery += "        ,Z4_PESOLIQ PESO "		+ CRLF
+	cQuery += "        ,'SZ4' TABELASZ "		+ CRLF
+	cQuery += "        ,SZ4.R_E_C_N_O_ SZREC "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SZ4") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ4") + CRLF
+	cQuery += " 		AND Z4_OP  = '"+AllTrim((cAliasTela)->TMP_ORDEM)+"'" + CRLF
+	cQuery += " 		AND Z4_APONTOK  = 'S'" + CRLF
+	cQuery += " 		AND Z4_AGLUTIN  <> 'S'" + CRLF
+	cQuery += " 		AND Z4_LOTECTL  <> ' '" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ4") + CRLF
+Return cQuery
+
+/*
+	Marca/Desmarca o lote do apontamento
+*/
+Static Function selecionarLote()
+	If oListaLotes:aArray[oListaLotes:nAt,1] == oCheckNo
+		oListaLotes:aArray[oListaLotes:nAt,1] := oCheckOk
+	Else
+		oListaLotes:aArray[oListaLotes:nAt,1] := oCheckNo
+	EndIf
+Return
+
+/*
+	Aglutinar os lotes selecionados
+*/
+Static Function aglutinarLotes()
+	Local nPosLote	:= 1	as integer
+
+	If validaDados()
+		Begin Transaction
+			cLoteDestino	:= buscaProximoLoteAglutinado(oListaLotes:aArray[1,3])
+
+			For nPosLote := 1 To Len(oListaLotes:aArray)
+				If oListaLotes:aArray[nPosLote,1] == oCheckOk
+					FwMsgRun(,{|oSay| 	transferenciaDeLote(nPosLote)},'','Processando Lote: ' + alltrim(UPPER(oListaLotes:aArray[nPosLote,3])))
+				EndIf
+			Next nPosLote
+			FwMsgRun(,{|oSay| 	ajustaPedidoVenda()},'',"Ajustando Pedido de Venda Aguarde...")
+
+		End Transaction
+
+		FWAlertSuccess("Rotina de aglutinacao finalizada.", "Aglutinacao")
+	EndIf
+Return
+
+/*
+	Valida os dados para aglutinar
+*/
+Static Function validaDados()
+	Local lRetorno			:= .T.	as logical
+	Local nPosLote			:= 1	as integer
+	Local nQuantidadeLotes	:= 0	as integer
+
+	For nPosLote := 1 To Len(oListaLotes:aArray)
+		If oListaLotes:aArray[nPosLote,1] == oCheckOk
+			nQuantidadeLotes++
+		EndIf
+	Next nPosLote
+
+	If nQuantidadeLotes < 2
+		lRetorno	:= .F.
+		FWAlertWarning("Precisa selecionar no minimo 2 lotes para aglutinar.", "Lotes")
+	EndIf
+Return lRetorno
+
+/*
+	Faz a transferencia de lote
+*/
+Static Function transferenciaDeLote(nPosLote)
+	Local aCabecalho	:= {}	as array
+	Local aLinha		:= {}	as array
+	Local cDocumento	:= ""	as character
+	Local cLote			:= oListaLotes:aArray[nPosLote,3]	as character
+	Local nQuantidade	:= 0	as numeric
+	Local cTabela		:= oListaLotes:aArray[nPosLote,6]	as character
+	Local nRecNoSZ		:= oListaLotes:aArray[nPosLote,7]	as integer
+
+	Private lAutoErrNoFile  := .T.
+	Private lMsErroAuto     := .F.
+
+	cLotesExcluidos	+= "|"+cLote
+
+	DbSelectArea("SZ3")
+	DbSelectArea("SZ4")
+
+	DbSelectArea("SB1")
+	DbSetOrder(1)
+	DbSeek(xFilial("SB1")+(cAliasTela)->C2_PRODUTO)
+
+	If SB1->B1_UM $ "KG|TL"
+		nQuantidade	:= oListaLotes:aArray[nPosLote,5]
+	Else
+		nQuantidade	:= oListaLotes:aArray[nPosLote,4]
+	EndIf
+
+	Begin Sequence
+		aCabecalho	:= {}
+		cDocumento	:= NextNumero("SD3",1,"D3_DOC",.T.)
+
+		If Empty(aCabecalho)
+			aAdd(aCabecalho,{cDocumento,dDataBase}) //Cabecalho
+		EndIf
+
+		aLinha :={}
+
+		//Origem
+		aAdd(aLinha,	{"ITEM"			,'001'					,Nil})
+		aAdd(aLinha,	{"D3_COD"		,SB1->B1_COD			,Nil}) //Cod Produto origem
+		aAdd(aLinha,	{"D3_DESCRI"	,SB1->B1_DESC			,Nil}) //descr produto origem
+		aAdd(aLinha,	{"D3_UM"		,SB1->B1_UM				,Nil}) //unidade medida origem
+		aAdd(aLinha,	{"D3_LOCAL"		,(cAliasTela)->C2_LOCAL	,Nil}) //armazem origem
+		aAdd(aLinha,	{"D3_LOCALIZ"	,(cAliasTela)->A1_CGC	,Nil}) //Informar endereço origem
+
+		//Destino
+		aAdd(aLinha,	{"D3_COD"		,SB1->B1_COD			,Nil}) //cod produto destino
+		aAdd(aLinha,	{"D3_DESCRI"	,SB1->B1_DESC			,Nil}) //descr produto destino
+		aAdd(aLinha,	{"D3_UM"		,SB1->B1_UM				,Nil}) //unidade medida destino
+		aAdd(aLinha,	{"D3_LOCAL"		,(cAliasTela)->C2_LOCAL	,Nil}) //armazem destino
+		aAdd(aLinha,	{"D3_LOCALIZ"	,(cAliasTela)->A1_CGC	,Nil}) //Informar endereço destino
+
+		//Origem
+		aAdd(aLinha,	{"D3_NUMSERI"	,""						,Nil}) //Numero serie
+		aAdd(aLinha,	{"D3_LOTECTL"	,cLote					,Nil}) //Lote Origem
+		aAdd(aLinha,	{"D3_NUMLOTE"	,""						,Nil}) //sublote origem
+		aAdd(aLinha,	{"D3_DTVALID"	,StoD("")				,Nil}) //data validade
+		aAdd(aLinha,	{"D3_POTENCI"	,0						,Nil}) // Potencia
+		aAdd(aLinha,	{"D3_QUANT"		,nQuantidade			,Nil}) //Quantidade
+		aAdd(aLinha,	{"D3_QTSEGUM"	,0						,Nil}) //Seg unidade medida
+		aAdd(aLinha,	{"D3_ESTORNO"	,""						,Nil}) //Estorno
+		aAdd(aLinha,	{"D3_NUMSEQ"	,""						,Nil}) // Numero sequencia D3_NUMSEQ
+
+		//Destino
+		aAdd(aLinha,	{"D3_LOTECTL"	,cLoteDestino			,Nil}) //Lote destino
+		aAdd(aLinha,	{"D3_NUMLOTE"	,""						,Nil}) //sublote destino
+		aAdd(aLinha,	{"D3_DTVALID"	,Date()+SB1->B1_PRVALID	,Nil}) //validade lote destino
+		aAdd(aLinha,	{"D3_ITEMGRD"	,""						,Nil}) //Item Grade
+
+		aAdd(aLinha,	{"D3_CODLAN"	,""						,Nil}) //cat83 prod origem
+		aAdd(aLinha,	{"D3_CODLAN"	,""						,Nil}) //cat83 prod destino
+
+		aAdd(aCabecalho, aLinha)
+
+		lMsErroAuto := .F.
+
+		MSExecAuto({|x,y| Mata261(x,y)}, aCabecalho, 3)
+
+		If lMsErroAuto
+			cError := getError()
+			addLogs(cError)
+			FWAlertError("Erro no processo de transferencia de lote.", "Transferencia")
+			DisarmTransaction()
+		Else
+			confirmaAglutinacao(cTabela, nRecNoSZ)
+		EndIf
+	End Sequence
+Return
+
+/*
+	Busca proximo lote aglutinado
+*/
+Static Function buscaProximoLoteAglutinado(cLote)
+	Local cQuery	:= ""	as character
+	Local cRetorno	:= ""	as character
+
+	cQuery	:= getQueryProximoLoteAglutinado(cLote)
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	DbSelectArea(cAlias)
+	(cAlias)->(DbGoTop())
+	If (cAlias)->(!EoF()) .and. !empty((cAlias)->MAXLOTE)
+		cRetorno	:= SubStr(AllTrim((cAlias)->MAXLOTE), 1, 12) + Soma1(SubStr(AllTrim((cAlias)->MAXLOTE), 13, 1))
+	Else
+		cRetorno	:= SubStr(AllTrim(cLote), 1, 11) + "G1"
+	EndIf
+	(cAlias)->(DbCloseArea())
+Return cRetorno
+
+/*
+	Query do proximo lote aglutinado
+*/
+Static Function getQueryProximoLoteAglutinado(cLote)
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "			MAX(B8_LOTECTL) MAXLOTE " + CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "		" + RetSQLTab("SB8") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += "			1 = 1 " + CRLF
+	cQuery += "			AND " + RetSqlFil("SB8") + CRLF
+	cQuery += "			AND B8_LOTECTL  LIKE '"+SubStr(AllTrim(cLote), 1, 11) + "G%'" + CRLF
+	cQuery += "			AND " + RetSqlDel("SB8") + CRLF
+Return cQuery
+
+/*
+	Confirmação de aglutinação
+*/
+Static Function confirmaAglutinacao(cTabela, nRecNoSZ)
+	If cTabela	== "SZ3"
+		SZ3->(DbGoTop())
+		SZ3->(DbGoTo(nRecNoSZ))
+		If SZ3->(Recno()) == nRecNoSZ
+			RecLock("SZ3", .F.)
+			SZ3->Z3_AGLUTIN	:= "S"
+			SZ3->(MsUnlock())
+		Else
+			FWAlertError("Confirmação do aglutinamento nao realizada. (SZ3)", "Aglutinação")
+			DisarmTransaction()
+		EndIf
+	ElseIf cTabela	== "SZ4"
+		SZ4->(DbGoTop())
+		SZ4->(DbGoTo(nRecNoSZ))
+		If SZ4->(Recno()) == nRecNoSZ
+			RecLock("SZ4", .F.)
+			SZ4->Z4_AGLUTIN	:= "S"
+			SZ4->(MsUnlock())
+		Else
+			FWAlertError("Confirmação do aglutinamento nao realizada. (SZ4)", "Aglutinação")
+			DisarmTransaction()
+		EndIf
+	EndIf
+Return
+
+/*
+	Ajusta Pedido de Venda
+*/
+Static Function ajustaPedidoVenda()
+	Local aCabecalhoPedido := {}   as array
+	Local aItensPedido     := {}   as array
+	Local aLinha           := {}   as array
+	Local cProximoItem     := "01" as character
+	Local nQuantidade      := 0    as numeric
+	Local nPeso            := 0    as numeric
+	Local nPrecoVenda      := 0    as numeric
+	Local cOperacaoFiscal  := ""   as character
+	Local cTES             := ""   as character
+	Local cItempc          := ''
+	Local cNumpc           := ''
+	Local nPesoBruto       :=0
+	DbSelectArea("SC2")
+	SC2->(DbSetOrder(1))
+	If SC2->(DbSeek(xFilial("SC2")+(cAliasTela)->TMP_ORDEM))
+		If !Empty(SC2->C2_PEDIDO)
+			DbSelectArea("SC5")
+			SC5->(DbSetOrder(1))
+			If SC5->(DbSeek(xFilial("SC5")+SC2->C2_PEDIDO))
+				Begin Sequence
+					aAdd(aCabecalhoPedido,{"C5_NUM", SC5->C5_NUM, Nil})
+
+					DbSelectArea("SC6")
+					SC6->(DbSetOrder(1))
+					If SC6->(DbSeek(xFilial("SC6")+SC5->C5_NUM))
+						Do While SC6->(!EOF()) .AND. SC6->(C6_FILIAL+C6_NUM) == SC5->(C5_FILIAL+C5_NUM)
+							If Val(SC6->C6_ITEM) > Val(cProximoItem)
+								cProximoItem := SC6->C6_ITEM
+							EndIf
+
+							If AllTrim(SC6->C6_LOTECTL) $ cLotesExcluidos .And. SC6->C6_PRODUTO == (cAliasTela)->C2_PRODUTO
+								aLinha := {}
+								aAdd(aLinha, {"LINPOS"		, "C6_ITEM"			, SC6->C6_ITEM})
+								aAdd(aLinha, {"AUTDELETA"	, "S"				, Nil})
+								/*aAdd(aLinha, {"C6_ITEM"		, SC6->C6_ITEM		, Nil})
+								aAdd(aLinha, {"C6_PRODUTO"	, SC6->C6_PRODUTO	, Nil})
+								aAdd(aLinha, {"C6_QTDVEN"	, SC6->C6_QTDVEN	, Nil})
+								aAdd(aLinha, {"C6_ZPESO"	, SC6->C6_ZPESO		, Nil})
+								aAdd(aLinha, {"C6_LOCAL"	, SC6->C6_LOCAL		, Nil})
+								aAdd(aLinha, {"C6_LOCALIZ"	, SC6->C6_LOCALIZ	, Nil})
+								aAdd(aLinha, {"C6_PRCVEN"	, SC6->C6_PRCVEN	, Nil})
+								aAdd(aLinha, {"C6_PRUNIT"	, SC6->C6_PRUNIT	, Nil})
+								aAdd(aLinha, {"C6_VALOR"	, SC6->C6_VALOR		, Nil})
+								aAdd(aLinha, {"C6_OPER"		, SC6->C6_OPER		, Nil})
+								aAdd(aLinha, {"C6_TES"		, SC6->C6_TES		, Nil})
+								aAdd(aLinha, {"C6_LOTECTL"	, SC6->C6_LOTECTL	, Nil})
+								aAdd(aLinha, {"C6_NUMOP"	, SC6->C6_NUMOP		, Nil})
+								aAdd(aLinha, {"C6_ITEMOP"	, SC6->C6_ITEMOP	, Nil})*/
+
+								aAdd(aItensPedido, aLinha)
+
+								nQuantidade		+= SC6->C6_QTDVEN
+								nPeso			+= SC6->C6_ZPESO
+								nPrecoVenda		:= SC6->C6_PRCVEN
+								cOperacaoFiscal	:= SC6->C6_OPER
+								cTES			:= SC6->C6_TES
+								nPesoBruto		+= SC6->C6_ZPESOBT
+								if !empty(SC6->C6_NUMPCOM)
+								cItempc         := SC6->C6_ITEMPC
+								cNumpc          := SC6->C6_NUMPCOM
+								endif
+							EndIf
+
+							SC6->(DbSkip())
+						EndDo
+					EndIf
+
+					
+					aLinha := {}
+					aAdd(aLinha, {"AUTDELETA"	, "N"						, Nil})
+					aadd(aLinha, {"C6_ITEM"   , Soma1(cProximoItem)                , Nil})
+					aadd(aLinha, {"C6_PRODUTO", (cAliasTela)->C2_PRODUTO           , Nil})
+					aadd(aLinha, {"C6_QTDVEN" , nQuantidade                        , Nil})
+					aadd(aLinha, {"C6_ZPESO"  , nPeso                              , Nil})
+					aadd(aLinha, {"C6_ZPESOBT", nPesoBruto                         , Nil})
+					aadd(aLinha, {"C6_LOCAL"  , (cAliasTela)->C2_LOCAL             , Nil})
+					aadd(aLinha, {"C6_LOCALIZ", (cAliasTela)->A1_CGC               , Nil})
+					aadd(aLinha, {"C6_PRCVEN" , nPrecoVenda                        , Nil})
+					aadd(aLinha, {"C6_PRUNIT" , nPrecoVenda                        , Nil})
+					aadd(aLinha, {"C6_VALOR"  , Round(nQuantidade * nPrecoVenda,2) , Nil})
+					aadd(aLinha, {"C6_OPER"   , cOperacaoFiscal                    , Nil})
+					aadd(aLinha, {"C6_TES"    , cTES                               , Nil})
+					aadd(aLinha, {"C6_LOTECTL", cLoteDestino                       , Nil})
+					aadd(aLinha, {"C6_NUMOP"  , SubStr((cAliasTela)->TMP_ORDEM,1,6), Nil})
+					aadd(aLinha, {"C6_ITEMOP" , SubStr((cAliasTela)->TMP_ORDEM,7,2), Nil})
+					aadd(aLinha, {"C6_ITEMPC" , cItempc                            , Nil})
+					aadd(aLinha, {"C6_NUMPCOM", cNumpc                             , Nil})
+
+
+					aAdd(aItensPedido, aLinha)
+
+					lMsErroAuto     := .F.
+
+					MSExecAuto({|a, b, c, d| MATA410(a, b, c, d)}, aCabecalhoPedido, aItensPedido, 4, .F.)
+
+					If lMsErroAuto
+						cError := getError()
+						addLogs(cError)
+						FWAlertError("Erro ao ajustar o pedido de venda com o novo lote.", "Pedido de Venda")
+						DisarmTransaction()
+					EndIf
+				End Sequence
+			EndIf
+		EndIf
+	EndIf
+Return
+
+/*
+	Rotina que recupera o Log da Rotina Automática, sem excluir o Log Padrão
+*/
+Static Function getError(cSeparador)
+	Local aAutoErro 	:= GetAutoGRLog()
+	Local cLog			:= ""
+	Local nLog			:= 1
+
+	Default cSeparador	:= CRLF
+
+	For nLog:=1 to Len(aAutoErro)
+		//If (nLog <= 2) .Or. ("Invalido" $ Alltrim(aAutoErro[nLog]))
+		cLog += Alltrim(aAutoErro[nLog]) + cSeparador
+		//EndIf
+
+		//Refaz a Gravação do Log de Erro
+		AutoGRLog( aAutoErro[nLog] )
+	Next nLog
+Return cLog
+
+/*
+	Tratamento de Logs para Rotina Automática e pela Interface com Solução
+*/
+Static Function addLogs(cLogs, cSolucao, lRet)
+	Local aSolucao 	:= {}
+
+	Default lRet	:= .F.
+
+	If !( lRet )
+		If !Empty(cSolucao)
+			aAdd( aSolucao , cSolucao )
+		EndIf
+
+		Help(,,"HELP",,cLogs,1,0, Nil, Nil, Nil, Nil, Nil, aSolucao )
+	EndIf
+Return

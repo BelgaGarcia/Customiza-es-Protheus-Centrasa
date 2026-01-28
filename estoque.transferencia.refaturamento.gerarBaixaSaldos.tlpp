@@ -1,0 +1,180 @@
+#include "protheus.ch"
+
+#define		OPERACAO_ESTORNO	6
+#define 	OPERACAO_INCLUSAO	3
+
+namespace estoque.transferencia.refaturamento
+
+/*/ {Protheus.doc} GerarBaixaSaldos
+
+Rotina de Refaturamento para gerar Baixa do saldos dos itens
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 13/01/2025
+@version P12
+@database ORACLE
+
+@param - cDocTransferencia - character -  Numero do documento para gerar transferencia
+
+@return - lRet - Logial - Retorna se a operação foi realizada com sucesso
+/*/
+User Function GerarBaixaSaldos(cDocTransferencia)
+	Local lRet 			    := .T.	as logical
+	Local lContinua			:= .T.	as logical
+	Local cDocumento	    := ""	as character
+	Local aAutoCab		    := {}	as array
+	Local aRecord			:= {}	as array
+	Local aAutoItens		:= {}	as array
+	Local aAreaSD1		    := {}	as array
+	Local nQuantidade	    := 0	as numeric
+	Local nTamCampoItem	    := 0	as numeric
+	Local cMsgErro		    := ""	as character
+	Local cEndereco		    := ""	as character
+	Local cProduto		    := ""	as character
+	Local cLocal		    := ""	as character
+	Local cLote			    := ""	as character
+	Local cCodigoTM			:= ""	as character
+	Local aErrosLog		    := {}	as array
+	Local nRegLog		    := 0	as numeric
+
+	Private lMsErroAuto 	:= .F.	as logical
+	Private lMsHelpAuto    	:= .T.	as logical
+	Private lAutoErrNoFile	:= .T.	as logical
+
+	Default cDocTransferencia	:= ""
+
+	aAreaSD1		:= (cAliasSD1)->(getArea())
+
+	nTamCampoItem	:= FWTamSX3("D3_ITEM")[1]
+	cCodigoTM		:= GetNewPar("FS_TMBXREF","001")
+
+	dbSelectArea("SB1")
+	SB1->(dbSetOrder(1))
+
+	dbSelectArea("SF4")
+	SF4->(dbSetOrder(1))
+
+	(cAliasSD1)->(dbSetOrder(2))
+
+	(cAliasSD1)->(dbGotop())
+	While !(cAliasSD1)->(eof())
+
+		lContinua := .F.
+
+		If SF4->(dbSeek(FWxFilial("SF4")+(cAliasSD1)->FS_PRODUTO)) .And. ( SF4->F4_ESTOQUE == "S") .And. ( SF4->F4_PODER3 == "N")
+			lContinua := .T.
+		Endif
+
+		If ( lContinua == .T.)
+
+			nQuantidade := (cAliasSD1)->FS_QUANT
+
+			If !( nQuantidade == 0 )
+
+				If Empty(aAutoCab)
+					cDocumento  	    := getNumeroDocTransferencia()
+					cDocTransferencia   := cDocumento
+
+					aAdd( aAutoCab , {"D3_DOC"		,cDocumento		,Nil} )
+					aAdd( aAutoCab , {"D3_TM"    	,cCodigoTM 		,Nil} )
+					aAdd( aAutoCab , {"D3_EMISSAO"	,dDataBase	   	,Nil} )
+				Endif
+
+				aRecord 	:= {}
+				cEndereco	:= ""
+				cProduto 	:= (cAliasSD1)->FS_PRODUTO
+				cLocal		:= (cAliasSD1)->FS_LOCAL
+				cLote		:= (cAliasSD1)->FS_LOTECTL
+
+				SB1->(dbSeek(FWxFilial("SB1")+(cAliasSD1)->FS_PRODUTO))
+
+				aAdd(aRecord,{"D3_COD"		, (cAliasSD1)->FS_PRODUTO	, Nil})
+				aAdd(aRecord,{"D3_UM"		, SB1->B1_UM				, Nil})
+				aAdd(aRecord,{"D3_QUANT"	, (cAliasSD1)->FS_QUANT		, Nil})
+				aAdd(aRecord,{"D3_LOCAL"	, (cAliasSD1)->FS_LOCAL		, Nil})
+				aAdd(aRecord,{"D3_DESCRI"	, (cAliasSD1)->FS_DESCRI	, Nil})
+				aAdd(aRecord,{"D3_LOTECTL"	, (cAliasSD1)->FS_LOTECTL	, Nil})
+				aAdd(aRecord,{"D3_DTVALID"	, (cAliasSD1)->FS_DTVALID	, Nil})
+
+				If SB1->B1_LOCALIZ == "S"
+					cEndereco := getEndereco(cProduto,cLocal,cLote)
+				Endif
+				aAdd(aRecord,{"D3_LOCALIZ"	, cEndereco					, Nil})
+
+				aAdd(aAutoItens,aRecord)
+
+			Endif
+		Endif
+
+		(cAliasSD1)->(dbSkip())
+	EndDo
+
+	If !(Empty(aAutoCab) ) .And. !(Empty(aAutoItens) )
+
+		MsExecAuto( {|x,y| MATA241(x,y) }, aAutoCab, aAutoItens )
+	
+		If ( lMsErroAuto == .T.)
+			cMsgErro := "Erro ao gerar baixa saldos." + CRLF
+			aErrosLog := GetAutoGrLog()
+
+			For nRegLog := 1 to Len(aErrosLog)
+				cMsgErro += aErrosLog[nRegLog] + CRLF
+			Next
+
+			aAdd(aLogErro,{3,cMsgErro,"Erro ao gerar baixa saldos.",cNotaFiscal,cSerieNota,cCodFornecedor,cLojFornecedor})
+
+			lRet := .F.
+		Else
+			//cDocTransferencia := SD3->D3_DOC
+		EndIf
+
+	Endif
+
+	RestArea(aAreaSD1)
+
+Return lRet
+
+/*/
+	Verificar endereco do produto
+/*/
+Static Function getEndereco(cProduto,cLocal,cLote)
+	Local cRet		:= ""				as character
+	Local aAreaBF	:= SBF->(getArea())	as array
+
+	dbSelectArea("SBF")
+	SBF->(dbSetOrder(2))
+
+	If SBF->(dbSeek(FWxFilial("SBF")+cProduto+cLocal+cLote))
+		cRet := SBF->BF_LOCALIZ
+	Endif
+
+	RestArea(aAreaBF)
+Return cRet
+
+/*/
+	Buscar proximo numero documento transferencia
+/*/
+Static Function getNumeroDocTransferencia()
+	Local cRet		:= ""	as character
+	Local aAreaSD3	:= {}	as array
+	Local lContinua	:= .T.	as logical
+
+	aAreaSD3 := SD3->(getArea())
+
+	dbSelectArea("SD3")
+	SD3->(dbSetOrder(2))
+
+	While lContinua
+		cRet := GetSxeNum("SD3","D3_DOC")
+		If !SD3->(dbSeek(FWxFilial("SD3")+cRet))
+			lContinua := .F.
+		Else
+			ConfirmSX8()
+		Endif
+
+	Enddo
+
+	RestArea(aAreaSD3)
+
+Return cRet

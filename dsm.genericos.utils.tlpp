@@ -1,0 +1,826 @@
+#include "totvs.ch"
+
+#Define TAB    Chr(9)             // TABULAÇÃO (TAB)
+#Define BULLET Chr(7)             // TÓPICO (BULLET POINT)
+
+namespace dsm.genericos
+
+/*/{Protheus.doc} utils
+Nome do arquivo
+@type function
+@author rodolfomagalhaes
+@since 05/06/2024
+
+@history 05/06/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar sequencialClienteFornecedor
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar checarFaturamentoAntecipado
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar checarLoteDigitadoBobina
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar whenh601
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar whenh602
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar whenh603
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar fGerarLoteApontamento
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar fAddItemPedidoVendaProducao
+@history 11/09/2024, rodolfo.magalhaes@dsmsolutions.com.br, Implementar fRemItemPedidoVendaProducao
+@history 07/02/2025, rodolfo.magalhaes@dsmsolutions.com.br, Validar Existencia Endereço
+
+/*/
+User Function utils()
+return nil
+
+/*/{Protheus.doc} sequencialClienteFornecedor
+Controle sequencial Cadastro de Clientes e Fornecedores
+@type function
+@author rodolfomagalhaes
+@since 05/06/2024
+/*/
+User Function sequencialClienteFornecedor(cCodigoTabela,cCGC)
+
+	// Local cQuery           := ""
+	// Local cAliasSQL        := ""
+	Local lGeracaoCodigoOK := .T.
+	Local cCodigoSequencial:= "00000001"
+	Local cCodigoLoja      := "01"
+
+	default cCodigoTabela := ""
+	default cCGC := ""
+
+	If !Empty(cCodigoTabela) .AND. !Empty(cCGC)
+
+		cCGC  := StrTran(cCGC , ".", "")
+		cCGC  := StrTran(cCGC , "-", "")
+		cCGC  := StrTran(cCGC , "/", "")
+
+		Do Case
+		Case cCodigoTabela == "SA1"
+
+			DbSelectArea("SA1")
+			SA1->(DbSetORder(1))
+
+			If len(alltrim(cCGC)) == 14
+
+				cCodigoSequencial := Avkey(Substr(cCGC,1,8),"A1_COD")
+				cCodigoLoja := AvKey(Substr(cCGC,9,4),"A1_LOJA")
+
+				If !SA1->(DBSeek(xFilial("SA1")+cCodigoSequencial+cCodigoLoja))
+
+					M->A1_COD := cCodigoSequencial
+					M->A1_LOJA := cCodigoLoja
+
+				Else
+					lGeracaoCodigoOK := .F.
+				EndIf
+
+			Else
+
+				While SA1->(DbSeek(xFilial("SA1")+cCodigoSequencial+cCodigoLoja))
+
+					cCodigoSequencial := SOMA1(cCodigoSequencial)
+
+				End Do
+
+				M->A1_COD := cCodigoSequencial
+				M->A1_LOJA := cCodigoLoja
+
+			EndIF
+
+		Case cCodigoTabela == "SA2"
+
+			DbSelectArea("SA2")
+			SA2->(DbSetORder(1))
+
+			If len(alltrim(cCGC)) == 14
+
+				cCodigoSequencial := Avkey(Substr(cCGC,1,8),"A2_COD")
+				cCodigoLoja := AvKey(Substr(cCGC,9,4),"A2_LOJA")
+
+				If !SA2->(DBSeek(xFilial("SA2")+cCodigoSequencial+cCodigoLoja))
+
+					M->A2_COD := cCodigoSequencial
+					M->A2_LOJA := cCodigoLoja
+
+				Else
+					lGeracaoCodigoOK := .F.
+				EndIf
+
+			Else
+
+				While SA2->(DbSeek(xFilial("SA2")+cCodigoSequencial+cCodigoLoja))
+
+					cCodigoSequencial := SOMA1(cCodigoSequencial)
+
+				End Do
+
+				M->A2_COD := cCodigoSequencial
+				M->A2_LOJA := cCodigoLoja
+
+			EndIF
+
+		End Case
+
+	EndIf
+
+Return lGeracaoCodigoOK
+
+/*/{Protheus.doc} checarFaturamentoAntecipado
+Verificar a existencia de Faturamento Antecipado
+@type function
+@author rodolfomagalhaes
+@since 05/06/2024
+
+@see MT100LOK
+/*/
+User Function checarFaturamentoAntecipado(cItemValidado, cIdentificacaoBobina)
+
+	Local lExist           := .F.
+	Local lAlteraPedido	   := .F.
+	Local cMensagem        := "Validação automatica sobre Faturamento Antecipado:"+CRLF+CRLF
+	Local aCabecalhoPedido := {}
+	Local aItensPedido     := {}
+	Local cOper1Fis        := Alltrim(SuperGetMV("ZV_C6OPER1", .F., "")) // Sem NF BENEFICIAMENTO
+	Local cOper2Fis        := Alltrim(SuperGetMV("ZV_C6OPER2", .F., "")) // Com NF BENEFICIAMENTO
+	Local nCount		   := 0
+
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .F.
+	Private lAutoErrNoFile := .T.
+
+	If !Empty(cIdentificacaoBobina)
+
+		DbSelectArea("SC5")
+		SC5->(DBOrderNickname("DSMSC5001")) // C5_FILIAL + C5_ZLOTCTL
+		If SC5->(DbSeek(FwxFilial("SC5")+AvKey(cIdentificacaoBobina,"C5_ZLOTCTL")))
+
+			If !Empty(SC5->C5_NOTA)
+
+				lExist := .T.
+				cMensagem += "Faturamento antecipado localizado. Item: "+Alltrim(cItemValidado)+CRLF+CRLF
+				cMensagem += TAB+" ID bobina: "+cIdentificacaoBobina+CRLF
+				cMensagem += TAB+" Pedido: "+SC5->C5_NUM+CRLF
+				cMensagem += TAB+" Nota: "+SC5->C5_NOTA+CRLF
+				cMensagem += TAB+" Serie: "+SC5->C5_SERIE+CRLF
+				cMensagem += CRLF
+				cMensagem += TAB+" Sera sugerido o Codigo Operaçao fiscal do parametro ZV_D1OPER1"+CRLF
+				ShowLog(cMensagem)
+
+			Else
+				// Ajustar a OPERACAO do Pedido de venda
+				lExist := .F.
+
+				aadd(aCabecalhoPedido,{"C5_NUM",SC5->C5_NUM,Nil})
+
+				DbSelectArea("SC6")
+				SC6->(DbSetORder(1))
+				If SC6->(DbSeek(FwxFilial("SC6")+SC5->C5_NUM))
+
+					Do While SC6->(!EOF()) .AND. SC6->(C6_FILIAL+C6_NUM) == SC5->(C5_FILIAL+C5_NUM)
+
+						aLinha := {}
+						aadd(aLinha, {"LINPOS"    , "C6_ITEM"      , SC6->C6_ITEM})
+						aadd(aLinha, {"AUTDELETA" , "N"            , Nil})
+						aadd(aLinha, {"C6_PRODUTO", SC6->C6_PRODUTO, Nil})
+
+						If SC6->(C6_NFORI+C6_SERIORI+C6_ITEMORI) == SDH->(DH_NDOC+DH_SDOC+DH_ITEM)
+							lAlteraPedido := .T.
+							aadd(aLinha, {"C6_OPER", cOper2Fis, Nil})
+						else
+							aadd(aLinha, {"C6_OPER", cOper1Fis, Nil})
+						EndIf
+
+						aadd(aLinha, {"C6_QTDVEN" , SC6->C6_QTDVEN , Nil})
+						aadd(aLinha, {"C6_PRCVEN" , SC6->C6_PRCVEN , Nil})
+						aadd(aLinha, {"C6_PRUNIT" , SC6->C6_PRUNIT , Nil})
+						aadd(aLinha, {"C6_VALOR"  , SC6->C6_VALOR  , Nil})
+
+						aadd(aItensPedido, aLinha)
+
+						SC6->(DbSkip())
+
+					End Do
+
+					If lAlteraPedido
+						nOpcX := 4
+						MSExecAuto({|a, b, c, d| MATA410(a, b, c, d)}, aCabecalhoPedido, aItensPedido, nOpcX, .F.)
+						If !lMsErroAuto
+							ConOut("Alterado com sucesso! " + cDoc)
+						Else
+							ConOut("Erro na alteração!")
+							cLogErro := ''
+							aErroAuto := GetAutoGRLog()
+							For nCount := 1 To Len(aErroAuto)
+								cLogErro += StrTran(StrTran(aErroAuto[nCount], "<", ""), "-", "") + " "
+								ConOut(cLogErro)
+							Next nCount
+
+							ShowLog(cLogErro)
+						EndIf
+					EndIf
+				EndIf
+			EndIf
+		EndIf
+	EndIf
+return lExist
+
+/*/{Protheus.doc} checarLoteDigitadoBobina
+Validar LOTE Digitado D1_LOTECTL e D1_LOTEFOR
+@type function
+@author rodolfomagalhaes
+@since 05/06/2024
+
+@obs
+ dsm.genericos.U_checarLoteDigitadoBobina(GDFieldGet("D1_COD"),M->D1_LOTECTL,"D1_LOTECTL")
+
+@see MT100LOK
+/*/
+User Function checarLoteDigitadoBobina(cCodigoProduto, cNumeroLote, cNomeCampo, cOperacao)
+
+	Local lContinua   := .T.
+	Local nIndex      := 0
+	Local nLinhaAtual := n
+	Local nPosLote    := GDFIELDPOS("D1_LOTECTL")
+	Local cOper6Fis   := Strtran(Alltrim(SuperGetMV("ZV_D1OPER6", .F., "")),";","#")
+
+	DbSelectArea("SB8")
+	If !Empty(cNumeroLote) .AND. !FWIsInCallStack("NFENFECOB") .AND. !FWIsInCallStack("compras.entrada.u_Notagerencial") .And. !FWIsInCallStack("faturamento.pedido.u_Enviasaldogerencial") // Amarracao NF triangular
+
+		Do Case
+		Case Alltrim(cNomeCampo) == "D1_LOTECTL"
+
+			If !(Alltrim(CESPECIE) == "GER") // Acrecentar regra para devolucao #gabriel rodolfo
+
+				cQuery := "SELECT * FROM "+RetSQLTab("SB8") + CRLF
+                cQuery += " INNER JOIN "+RetSQLTab("SD1")+" ON " + CRLF
+                cQuery += "   "+RetSqlFil("SD1") + CRLF
+                cQuery += "     AND D1_DOC = B8_DOC" + CRLF
+                cQuery += "     AND D1_SERIE = B8_SERIE" + CRLF
+                cQuery += "     AND D1_FORNECE = B8_CLIFOR" + CRLF
+                cQuery += "     AND D1_LOJA = B8_LOJA" + CRLF
+				cQuery += "     AND D1_LOTECTL = B8_LOTECTL" + CRLF
+                cQuery += "     AND "+RetSqlDel("SD1") + CRLF
+                cQuery += " WHERE 1=1 " + CRLF
+                cQuery += "  AND " + RetSqlFil("SB8") + CRLF
+                cQuery += "  AND B8_LOCAL NOT LIKE 'Z%' " + CRLF
+                cQuery += "  AND B8_LOTECTL = '"+cNumeroLote+"' " + CRLF
+                cQuery += "  AND NOT (B8_DOC = '"+CNFISCAL+"' AND B8_SERIE = '"+CSERIE+"' AND B8_CLIFOR = '"+CA100FOR+"' AND B8_LOJA = '"+CLOJA+"')" + CRLF
+
+				cAlias := MPSysOpenQuery( cQuery )
+
+				If !(cAlias)->(EOF())
+					lContinua := .F.
+					cTexto := "ID / LOTE "+Alltrim(cNumeroLote)+" já utilizado!"+CRLF
+					cTexto += "NF "+Alltrim((cAlias)->B8_DOC)+CRLF
+					cTexto += "SERIE "+Alltrim((cAlias)->B8_SERIE)+CRLF
+					cTexto += "CLI/FOR "+Alltrim((cAlias)->B8_CLIFOR)+CRLF
+					cTexto += "LOJA "+Alltrim((cAlias)->B8_LOJA)+CRLF
+
+					If Alltrim(cOperacao) $ cOper6Fis 
+						cTexto += "Deseja continuar?"+CRLF
+						If FWAlertNoYes(cTexto, "Controle de Lote")
+							lContinua := .T.
+						EndIf
+					Else 
+					FWAlertWarning(cTexto, "Controle de Lote")
+					EndiF
+				EndiF
+
+				(cAlias)->(DBCloseArea())
+			EndIf
+
+			// DbSelectArea("SB8")
+			// SB8->(DbSetORder(2)) // B8_FILIAL+B8_NUMLOTE+B8_LOTECTL
+			// If SB8->(DbSeek(FwxFilial("SB8")+Avkey("","B8_NUMLOTE")+Avkey(cNumeroLote,"B8_LOTECTL")))
+
+			// 	While SB8->(!EOF()) .AND. SB8->(B8_FILIAL+B8_NUMLOTE+B8_LOTECTL) == FwxFilial("SB8")+Avkey("","B8_NUMLOTE")+Avkey(cNumeroLote,"B8_LOTECTL")
+
+			// 		// If !(SB8->B8_DOC == CNFISCAL .AND. SB8->B8_SERIE == CSERIE .AND. SB8->B8_CLIFOR == CA100FOR .AND. SB8->B8_LOJA == CLOJA)
+			// 		// If (SB8->B8_CLIFOR == CA100FOR .AND. SB8->B8_LOJA == CLOJA .AND. SB8->B8_SALDO == 0)
+
+			// 		// 	M->D1_DTVALID := SB8->B8_DTVALID
+			// 		// 	lContinua := .T.
+
+			// 		// Else
+
+			// 		lContinua := .F.
+			// 		cTexto := "ID / LOTE "+Alltrim(cNumeroLote)+" já utilizado!"+CRLF
+			// 		cTexto += "NF "+Alltrim(SB8->B8_DOC)+CRLF
+			// 		cTexto += "SERIE "+Alltrim(SB8->B8_SERIE)+CRLF
+			// 		cTexto += "CLI/FOR "+Alltrim(SB8->B8_CLIFOR)+CRLF
+			// 		cTexto += "LOJA "+Alltrim(SB8->B8_LOJA)+CRLF
+			// 		FWAlertWarning(cTexto, "Controle de Lote")
+			// 		EXIT
+
+			// 		// EndIf
+
+			// 		SB8->(DbSkip())
+
+			// 	EndDo
+
+			// EndIf
+
+			If lContinua
+
+				For nIndex := 1 to len(Acols)
+
+					If !(nIndex == nLinhaAtual)
+
+						If Alltrim(aCols[nIndex][nPosLote]) == Alltrim(cNumeroLote)
+							lContinua := .F.
+							FWAlertWarning("ID / LOTE "+Alltrim(cNumeroLote)+" já utilizado nesta NF!", "Controle de Lote")
+						EndIf
+
+					EndIf
+
+				Next nIndex
+
+			EndIf
+
+		End Case
+
+	EndIf
+
+Return lContinua
+
+/*/{Protheus.doc} whenh601
+Conttrolar WHEN campo H6_ZPESO
+@type function
+@author rodolfomagalhaes
+@since 16/09/2024
+/*/
+User Function whenh601()
+
+	Local lEditar := .F.
+
+	If !Empty(M->H6_PRODUTO)
+		DbSelectArea("SB1")
+		SB1->(DbSetORder(1))
+		SB1->(DbSeek(FwxFilial("SB1")+M->H6_PRODUTO))
+		Do Case
+		Case M->H6_OPERAC == "01"
+			lEditar := .F.
+			If !(SB1->B1_UM $("KG|TL"))
+				M->H6_ZPESO := 1
+			Else
+				M->H6_ZPESO := 0
+			EndIf
+		Case M->H6_OPERAC == "02"
+			If !(SB1->B1_UM $("KG|TL"))
+				lEditar := .T.
+			EndIf
+		End Case
+	EndIf
+
+Return lEditar
+
+/*/{Protheus.doc} whenh602
+Conttrolar WHEN campo H6_ZPESOBT
+@type function
+@author rodolfomagalhaes
+@since 16/09/2024
+/*/
+User Function whenh602()
+
+	Local lEditar := .F.
+
+	If !Empty(M->H6_PRODUTO)
+		DbSelectArea("SB1")
+		SB1->(DbSetORder(1))
+		SB1->(DbSeek(FwxFilial("SB1")+M->H6_PRODUTO))
+		Do Case
+		Case M->H6_OPERAC == "01"
+			lEditar := .F.
+			If !(SB1->B1_UM $("KG|TL"))
+				M->H6_ZPESOBT := 1
+			Else
+				M->H6_ZPESOBT := 0
+			EndIf
+		Case M->H6_OPERAC == "02"
+			If !(SB1->B1_UM $("KG|TL"))
+				lEditar := .T.
+			EndIf
+		End Case
+	EndIf
+
+Return lEditar
+
+/*/{Protheus.doc} whenh603
+Conttrolar WHEN campo H6_ZQUANT
+@type function
+@author rodolfomagalhaes
+@since 16/09/2024
+/*/
+User Function whenh603()
+
+	Local lEditar := .F.
+
+	If !Empty(M->H6_PRODUTO)
+		DbSelectArea("SB1")
+		SB1->(DbSetORder(1))
+		SB1->(DbSeek(FwxFilial("SB1")+M->H6_PRODUTO))
+		Do Case
+		Case M->H6_OPERAC == "01"
+			lEditar := .F.
+			If (SB1->B1_UM $("KG|TL"))
+				M->H6_ZQUANT := 1
+			Else
+				M->H6_ZQUANT := 0
+			EndIf
+		Case M->H6_OPERAC == "02"
+			If (SB1->B1_UM $("KG|TL"))
+				lEditar := .T.
+			EndIf
+		End Case
+	EndIf
+
+Return lEditar
+
+/*/{Protheus.doc} fGerarLoteApontamento
+Controlar sugestão numero do LOTE a ser gerado nos apontamentos MOD I e MOD II
+@type function
+@author rodolfomagalhaes
+@since 16/09/2024
+/*/
+User Function fGerarLoteApontamento(cCodigoOperacao)
+
+	Local nNumLote := Alltrim(M->H6_OP)+"01"
+	Local cQuery   := ""
+	Local cQryTmp  := ""
+
+	Default cCodigoOperacao := ""
+
+	// If Alltrim(cCodigoOperacao) == "02" .AND. !Empty(M->H6_OP)
+	If !Empty(M->H6_OP)
+
+		M->H6_LOTECTL := SPACE(TamSx3("H6_LOTECTL")[1])
+		M->H6_DTVALID := StoD("")
+
+		DbSelectArea("SB1")
+		SB1->(DbSetORder(1))
+		SB1->(DbSeek(FwxFilial("SB1")+M->H6_PRODUTO))
+
+		If Alltrim(SB1->B1_RASTRO) == "L"
+
+			cQuery := "SELECT MAX(H6_LOTECTL) MAXLOTEATUAL "+CRLF
+			cQuery += " FROM "+RetSqlTab("SH6") + " " + CRLF
+			cQuery += "	WHERE 1=1 "+CRLF
+			cQuery += "		AND " + RetSqlFil("SH6")+" "+CRLF
+			cQuery += "		AND " + RetSqlDel("SH6")+" "+CRLF
+			cQuery += "		AND H6_OP = "+ValToSql(M->H6_OP)+" "+CRLF
+			cQuery += "		AND H6_OPERAC = '02' "+CRLF
+
+			cQuery := ChangeQuery(cQuery)
+			cQryTmp := MPSysOpenQuery( cQuery )
+
+			If (cQryTmp)->(!EOF())
+				If Substr(Alltrim((cQryTmp)->MAXLOTEATUAL),1,11) == Alltrim(M->H6_OP)
+					M->H6_LOTECTL := SOMA1((cQryTmp)->MAXLOTEATUAL)
+				Else
+					M->H6_LOTECTL := nNumLote
+				EndIf
+			Else
+				M->H6_LOTECTL := nNumLote
+			EndIf
+
+			DbSelectArea("SB1")
+			SB1->(DbSetOrder(1))
+			If SB1->(DbSeek(FwxFilial("SB1")+M->H6_PRODUTO))
+
+				If SB1->B1_PRVALID == 0
+					M->H6_DTVALID := (DDATABASE + (50 * 365))
+				EndIf
+
+			EndIf
+
+			(cQryTmp)->(DBCloseArea())
+		EndIf
+	EndIf
+
+Return .T.
+
+/*/{Protheus.doc} fGerarLoteApontamento
+Controlar sugestão numero do LOTE a ser gerado nos apontamentos MOD I e MOD II Para ser utilizado em execauto
+@type function
+@author rodolfomagalhaes
+@since 16/09/2024
+/*/
+User Function fBuscaProximoLote(cNumeroOrdemProducao, cCodigoProdutoProduzido)
+
+	Local nNumLote  := Alltrim(cNumeroOrdemProducao)+"01"
+	Local nNewLote  := ""
+	Local dValidade := DDATABASE+SB1->B1_PRVALID
+	Local cQuery    := ""
+	Local cQryTmp   := ""
+	Local aNovoLote := {nNumLote, dValidade, .F.}
+
+	DbSelectArea("SB1")
+	SB1->(DbSetORder(1))
+	SB1->(DbSeek(FwxFilial("SB1")+AvKey(cCodigoProdutoProduzido, "H6_PRODUTO")))
+
+	If Alltrim(SB1->B1_RASTRO) == "L"
+
+		cQuery := "SELECT MAX(CAST(H6_LOTECTL AS NUMERIC)) MAXLOTEATUAL "+CRLF
+		cQuery += " FROM "+RetSqlTab("SH6") + " " + CRLF
+		cQuery += "	WHERE 1=1 "+CRLF
+		cQuery += "		AND " + RetSqlFil("SH6")+" "+CRLF
+		cQuery += "		AND " + RetSqlDel("SH6")+" "+CRLF
+		cQuery += "		AND H6_OP = "+ValToSql(cNumeroOrdemProducao)+" "+CRLF
+		cQuery += "		AND H6_OPERAC = '02' "+CRLF
+
+		cQuery := ChangeQuery(cQuery)
+		cQryTmp := MPSysOpenQuery( cQuery )
+
+		If (cQryTmp)->(!EOF())
+			nNewLote := StrZero((cQryTmp)->MAXLOTEATUAL,13)
+			If Substr(nNewLote,1,11) == Alltrim(cNumeroOrdemProducao)
+				aNovoLote := {SOMA1(nNewLote), dValidade, .F.}
+			Else
+				aNovoLote := {nNumLote, dValidade, .F.}
+			EndIf
+		Else
+			aNovoLote := {nNumLote, dValidade, .F.}
+		EndIf
+
+		(cQryTmp)->(DBCloseArea())
+	EndIf
+
+Return aNovoLote
+
+/*/{Protheus.doc} fAddItemPedidoVendaProducao
+Adicionar no Pedido de Venda que originou o plano de corte o produto apontado para faturamento
+@type function
+@version 1.0
+@author rodolfomagalhaes
+@since 25/09/2024
+
+/*/
+User Function fAddItemPedidoVendaProducao()
+
+	Local aCabecalhoPedido := {}
+	Local aLinha           := {}
+	Local aItensPedido     := {}
+	Local cProxItem        := "01"
+	Local cOperacaoFis     := "" //Alltrim(SuperGetMV("ZV_ZV_C6OPE10", .F., "61")) // Operacao Faturamento
+	Local nCount           := 0
+	Local aArea            := GetArea()
+	Local nValorUnitario   := 0
+	Local nValorTabela     := 0
+	Local cPedidoCliente   := ""
+	Local cItPedidoCliente := ""
+
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .T.
+	Private lAutoErrNoFile := .T.
+
+	If Alltrim(SH6->H6_OPERAC) == "02" .AND. Substr(Alltrim(SH6->H6_OP),9,3) == "001"
+
+		DbSelectArea("SC2")
+		SC2->(DbSetOrder(1))
+		If SC2->(DbSeek(FwxFilial("SC2")+SH6->H6_OP))
+
+			If !Empty(SC2->C2_PEDIDO)
+
+				DbSelectArea("SC5")
+				SC5->(DbSetOrder(1)) // C5_FILIAL + C5_ZLOTCTL
+				If SC5->(DbSeek(FwxFilial("SC5")+SC2->C2_PEDIDO))
+
+					If Empty(SC5->C5_NOTA)
+
+						// Begin Sequence
+
+						aadd(aCabecalhoPedido,{"C5_NUM", SC5->C5_NUM, Nil})
+
+						DbSelectArea("SC6")
+						SC6->(DbSetORder(1))
+						If SC6->(DbSeek(FwxFilial("SC6")+SC5->C5_NUM))
+
+							Do While SC6->(!EOF()) .AND. SC6->(C6_FILIAL+C6_NUM) == SC5->(C5_FILIAL+C5_NUM)
+
+								If val(SC6->C6_ITEM) > Val(cProxItem)
+									cProxItem := SC6->C6_ITEM
+								EndIf
+
+								If nValorUnitario == 0 .AND. SC6->C6_PRODUTO == SH6->H6_PRODUTO
+									nValorUnitario := SC6->C6_PRCVEN
+									cPedidoCliente := SC6->C6_NUMPCOM
+									cItPedidoCliente := SC6->C6_ITEMPC
+									cOperacaoFis	:= SC6->C6_OPER
+								EndIf
+
+								SC6->(DbSkip())
+
+							End Do
+
+						EndIf
+
+						aLinha := {}
+						DbSelectArea("SB1")
+						SB1->(DbSeek(FwxFilial("SB1")+SH6->H6_PRODUTO))
+						// aadd(aLinha, {"LINPOS"    , "C6_ITEM"             , SOMA1(cProxItem)})
+						aadd(aLinha, {"AUTDELETA" , "N"             , Nil})
+						aadd(aLinha, {"C6_ITEM"   , SOMA1(cProxItem), Nil})
+						aadd(aLinha, {"C6_PRODUTO", SH6->H6_PRODUTO , Nil})
+						aadd(aLinha, {"C6_QTDVEN" , SH6->H6_QTDPROD , Nil})
+						aadd(aLinha, {"C6_LOCAL"  , SC2->C2_LOCAL   , Nil})
+
+						DbSelectArea("SA1")
+						SA1->(DbSetORder(1))
+						SA1->(Dbseek(FwxFilial("SA1")+SC5->(C5_CLIENTE+C5_LOJACLI)))
+
+						aadd(aLinha, {"C6_LOCALIZ", SA1->A1_CGC     , Nil})
+
+						If !Empty(SC5->C5_TABELA)
+							nValorTabela := MaTabPrVen(SC5->C5_TABELA,SH6->H6_PRODUTO,SH6->H6_QTDPROD,SC5->C5_CLIENTE,SC5->C5_LOJACLI,SC5->C5_MOEDA,SC5->C5_EMISSAO)
+							If nValorTabela > 0
+								nValorUnitario := nValorTabela
+							EndIf
+						EndIf
+
+						DbSelectArea("SA7")
+						SA7->(DbSetOrder(1))
+						If SA7->(DbSeek(FwxFilial("SA7")+SC5->C5_CLIENTE+SC5->C5_LOJACLI+SH6->H6_PRODUTO))
+							If SA7->A7_ZUMNFE == "KG"
+								nValorUnitario	:= (SH6->H6_ZPESO * SA7->A7_ZVLRUN) / SH6->H6_QTDPROD
+							ElseIf SA7->A7_ZUMNFE == "TL"
+								nValorUnitario	:= ((SH6->H6_ZPESO / 1000) * SA7->A7_ZVLRUN) / SH6->H6_QTDPROD
+							EndIf
+						EndIf
+
+						If nValorUnitario == 0
+							nValorUnitario := 1
+						EndIf
+
+						aadd(aLinha, {"C6_PRCVEN", nValorUnitario                           , Nil})
+						aadd(aLinha, {"C6_PRUNIT", nValorUnitario                           , Nil})
+						aadd(aLinha, {"C6_VALOR" , ROUND(SH6->H6_QTDPROD * nValorUnitario,2), Nil})
+
+						aadd(aLinha, {"C6_OPER"   , cOperacaoFis             , Nil})
+						cTES := MaTesInt(2,cOperacaoFis,SC5->C5_CLIENTE,SC5->C5_LOJACLI,If(SC5->C5_TIPO$"DB","F","C"),SH6->H6_PRODUTO)
+
+						aadd(aLinha, {"C6_TES"    , cTES                  , Nil})
+						aadd(aLinha, {"C6_LOTECTL", SH6->H6_LOTECTL       , Nil})
+						aadd(aLinha, {"C6_NUMOP"  , Substr(SH6->H6_OP,1,6), Nil})
+						aadd(aLinha, {"C6_ITEMOP" , Substr(SH6->H6_OP,7,2), Nil})
+						aadd(aLinha, {"C6_NUMPCOM", cPedidoCliente        , Nil})
+						aadd(aLinha, {"C6_ITEMPC" , cItPedidoCliente      , Nil})
+
+						If SB1->B1_UM $ "KG|TL"
+							aadd(aLinha, {"C6_ZPESO"  , SH6->H6_QTDPROD , Nil})
+							aadd(aLinha, {"C6_ZPESOBT", SH6->H6_ZPESOBT , Nil})
+						Else
+							aadd(aLinha, {"C6_ZPESO"  , SH6->H6_ZPESO   , Nil})
+							aadd(aLinha, {"C6_ZPESOBT", SH6->H6_ZPESOBT , Nil})
+						EndIf
+
+						aadd(aItensPedido, aLinha)
+
+						nOpcX := 4
+
+						MSExecAuto({|a, b, c, d| MATA410(a, b, c, d)}, aCabecalhoPedido, aItensPedido, nOpcX, .F.)
+						If lMsErroAuto
+
+							cLogErro := ''
+							aErroAuto := GetAutoGRLog()
+							For nCount := 1 To Len(aErroAuto)
+								cLogErro += StrTran(StrTran(aErroAuto[nCount], "<", ""), "-", "") + " " + CRLF
+								// ConOut(cLogErro)
+							Next nCount
+							ShowLog(cLogErro)
+							// DisarmTransaction()
+						EndIf
+						// End Sequence
+					EndIf
+				EndIf
+			EndIf
+		EndIf
+	EndIf
+
+	RestArea(aArea)
+
+Return !lMsErroAuto
+
+/*/{Protheus.doc} fRemItemPedidoVendaProducao
+Remover do Pedido de Venda que originou o plano de corte o produto estornado para faturamento
+@type function
+@version 1.0
+@author rodolfomagalhaes
+@since 25/09/2024
+
+/*/
+User Function fRemItemPedidoVendaProducao(oSay)
+	Local nAcao            := PARAMIXB[1]
+	Local lRet             := .T.
+	Local aArea            := GetArea()
+	Local aCabecalhoPedido := {}
+	Local aLinha           := {}
+	Local aItensPedido     := {}
+	Local nCount           := 0
+
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .F.
+	Private lAutoErrNoFile := .T.
+
+	If nAcao == 2 //Operador confirmou estorno
+		If Alltrim(SH6->H6_OPERAC) == "02" .AND. Substr(Alltrim(SH6->H6_OP),9,3) == "001"
+
+			// oSay:SetText("Removendo Dados..") // oSay falhando ao utilizar via execauto....
+
+			DbSelectArea("SC2")
+			SC2->(DbSetOrder(1))
+			If SC2->(DbSeek(FwxFilial("SC2")+SH6->H6_OP))
+
+				If !Empty(SC2->C2_PEDIDO)
+
+					DbSelectArea("SC5")
+					SC5->(DbSetOrder(1)) // C5_FILIAL + C5_ZLOTCTL
+					If SC5->(DbSeek(FwxFilial("SC5")+SC2->C2_PEDIDO))
+
+						If Empty(SC5->C5_NOTA)
+
+							aadd(aCabecalhoPedido,{"C5_NUM", SC5->C5_NUM, Nil})
+
+							DbSelectArea("SC6")
+							SC6->(DBOrderNickname("DSMSC6001")) //
+							If SC6->(DbSeek(FwxFilial("SC6")+SC5->C5_NUM+SH6->H6_PRODUTO+SH6->H6_LOTECTL))
+
+								If Empty(SC6->C6_NOTA)
+
+									aLinha := {}
+									aadd(aLinha, {"LINPOS"    , "C6_ITEM"             , SC6->C6_ITEM})
+									aadd(aLinha, {"AUTDELETA" , "S"                   , Nil})
+
+									aadd(aItensPedido, aLinha)
+
+									nOpcX := 4
+									MSExecAuto({|a, b, c, d| MATA410(a, b, c, d)}, aCabecalhoPedido, aItensPedido, nOpcX, .F.)
+									If !lMsErroAuto
+										// ConOut("Alterado com sucesso! ")
+										// oSay:SetText("Removido com sucesso..")
+										lRet := .T.
+									Else
+										// ConOut("Erro na alteração!")
+										cLogErro := ''
+										aErroAuto := GetAutoGRLog()
+										For nCount := 1 To Len(aErroAuto)
+											cLogErro += StrTran(StrTran(aErroAuto[nCount], "<", ""), "-", "") + " "
+											ConOut(cLogErro)
+										Next nCount
+
+										ShowLog(cLogErro)
+										lRet := .F.
+									EndIf
+								EndIf
+							EndIf
+						Else
+							FWAlertWarning("Mensagem de aviso", "Item já faturado...")
+							lRet := .F.
+						EndIf
+					EndIf
+				EndIf
+			EndIf
+		EndIf
+
+		RestArea(aArea)
+	EndIf
+
+Return lRet
+
+//-------------------------------------------------------
+// CRIA ENDEREÇO CASO NÃO EXISTA
+//-------------------------------------------------------
+User Function fValidaExisteEndereco(cArmazem, cEndereco)
+
+	Local lExiste := .T.
+	Local aVetor  := {}
+
+	DbSelectArea("SBE")
+	SBE->(DbSetOrder(1))
+	If !SBE->(DbSeek(FwxFilial("SBE")+AvKey(cArmazem,"BE_LOCAL")+AvKey(cEndereco,"BE_LOCALIZ")))
+
+		DbSelectArea("SA1")
+		SA1->(DbSetOrder(3))
+		If SA1->(DbSeek(FwxFilial("SA1")+cEndereco))
+
+			aVetor :={{"BE_LOCAL" ,AvKey(cArmazem,"BE_LOCAL") ,Nil},;
+				{"BE_LOCALIZ", AvKey(cEndereco,"BE_LOCALIZ") , NIL},;
+				{"BE_DESCRIC", Substr(SA1->A1_NOME,1,TamSx3("BE_DESCRIC")[1]), NIL},;
+				{"BE_CAPACID", 0         , NIL},;
+				{"BE_PRIOR"  , "ZZZ"     , NIL},;
+				{"BE_ALTURLC", 0         , NIL},;
+				{"BE_LARGLC" , 0         , NIL},;
+				{"BE_COMPRLC", 0         , NIL},;
+				{"BE_PERDA"  , 5         , NIL},;
+				{"BE_STATUS" , "1"       , NIL}}
+
+			nOpc := 3	// inclusao
+
+			MSExecAuto({|x,y| MATA015(x,y)},aVetor, nOpc)
+
+			If lMsErroAuto
+				lExiste := .F.
+			Else
+				lExiste := .T.
+			EndIf
+		Else
+			lExiste := .F.
+		EndIf
+
+	EndIf
+
+Return lExiste

@@ -1,0 +1,141 @@
+#include "protheus.ch"
+
+#define		OPERACAO_ESTORNO	6
+
+namespace estoque.transferencia.refaturamento
+
+/*/ {Protheus.doc} EstornoTransferencia
+
+Rotina de Refaturamento para gerar Estorno Transferencia
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 10/12/2025
+@version P12
+@database ORACLE
+
+@param - cDocTrasnferencia - character -  Numero do documento para estorno
+
+@return - lRet - Logial - Retorna se a operação foi realizada com sucesso
+/*/
+User Function EstornoTransferencia(cDocTrasnferencia)
+	Local lRet				:= .T.	as logical
+	Local aAutoCab			:= {}	as array
+	Local nRecnoSD3			:= 0 	as numeric
+	Local cProduto			:= ""	as character
+	Local cDocumento		:= "" 	as character
+	Local cLote				:= "" 	as character
+	Local cMsgErro			:= ""	as character
+	Local aErrosLog			:= {}	as array
+	Local nRegLog			:= 0	as numeric
+	Local nPosProduto		:= 0	as numeric
+	Local aProdutos			:= {}	as array
+
+	Private lMsErroAuto 	:= .F.	as logical
+	Private lMsHelpAuto    	:= .T.	as logical
+	Private lAutoErrNoFile	:= .T.	as logical
+
+	Private lEstornoRefaturamento	:= .T.	as logical
+
+	Default cNumProcesso		:= ""
+	Default cDocTrasnferencia	:= ""
+	Default aLogErro			:= {}
+
+	dbSelectArea("SZ8")
+	SZ8->(dbSetOrder(1))
+
+	If SZ8->(dbSeek(FWxFilial("SZ8")+cNumProcesso))
+		While (!SZ8->(eof())) .And. ( SZ8->Z8_FILIAL == FWxFilial("SZ8") ) .And. ( SZ8->Z8_NUM == cNumProcesso)
+
+			aAutoCab 		:= {}
+			lMsErroAuto 	:= .F.
+			lMsHelpAuto    	:= .T.
+			lAutoErrNoFile	:= .T.
+			cProduto		:= SZ8->Z8_PRODUTO
+			cDocumento		:= cDocTrasnferencia
+			cLote			:= SZ8->Z8_LOTECTL//DES
+			nPosProduto		:= aScan(aProdutos,cProduto)
+
+			If !( SZ8->Z8_QUANT == 0 ) .And. ( nPosProduto == 0)
+
+				nRecnoSD3 := getCabEstorno(cProduto,cDocumento,cLote)
+
+				dbselectarea("SD3")
+				SD3->(dbGoTo(nRecnoSD3))
+
+				If SD3->(!EOF())
+
+					dDataEmissao	:= SD3->D3_EMISSAO
+
+					aAdd( aAutoCab , { SD3->D3_DOC, SD3->D3_EMISSAO, nRecnoSD3 } )
+
+					MsExecAuto({|x,y| MATA261(x,y)}, aAutoCab, OPERACAO_ESTORNO)
+
+					If ( lMsErroAuto == .T.)
+						cMsgErro := "Erro ao estornar transferencia." + CRLF
+						cMsgErro += "Numero do documento: "+cDocumento+ CRLF
+						cMsgErro += "Produto............: "+cProduto+ CRLF
+						cMsgErro += "Lote...............: "+cLote+ CRLF+ CRLF
+
+						aErrosLog := GetAutoGrLog()
+
+						For nRegLog := 1 to Len(aErrosLog)
+							cMsgErro += aErrosLog[nRegLog] + CRLF
+						Next
+
+						aAdd(aLogErro,{3,cMsgErro,"Erro ao estornar transferencia.",cNotaFiscal,cSerieNota,cCodFornecedor,cLojFornecedor})
+
+						lRet := .F.
+					EndIf
+					Exit
+				Else
+					cMsgErro := "Erro ao estornar transferencia." + CRLF
+					cMsgErro += "Numero do documento: "+cDocumento+ CRLF
+					cMsgErro += "Produto............: "+cProduto+ CRLF
+					cMsgErro += "Lote...............: "+cLote+ CRLF+ CRLF
+					cMsgErro += "Registro de transferencia não encontrado"+ CRLF
+					aAdd(aLogErro,{3,cMsgErro,"Erro ao estornar transferencia.",cNotaFiscal,cSerieNota,cCodFornecedor,cLojFornecedor})
+					Exit
+				Endif
+			Endif
+			SZ8->(dbSkip())
+		Enddo
+	Endif
+
+Return lRet
+
+/*/
+	Gerar cabecalho do estorno do item
+/*/
+Static Function getCabEstorno(cProduto,cDocumento,cLote)
+	Local nRet				:= 0	as numeric
+	Local cQuery			:= ""	as character
+	Local cAlias			:= ""	as character
+
+	Default cProduto		:= ""
+	Default cDocumento		:= ""
+	Default cLote			:= ""
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        R_E_C_N_O_ AS RECNOSD3" + CRLF
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD3") + CRLF
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD3") + CRLF
+	cQuery += " 		AND D3_COD  = "+ ValToSql(cProduto) + CRLF
+	cQuery += " 		AND D3_DOC  = "+ ValToSql(cDocumento) + CRLF
+	cQuery += " 		AND D3_LOTECTL = " + ValToSql(cLote) + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD3") + CRLF
+
+	cAlias	:=  MpSysOpenQuery(cQuery)
+
+	dbSelectArea(cAlias)
+
+	If ( (cAlias)->(!EOF()) )
+		nRet := (cAlias)->RECNOSD3
+	Endif
+
+	(cAlias)->(dbCloseArea())
+
+Return nRet

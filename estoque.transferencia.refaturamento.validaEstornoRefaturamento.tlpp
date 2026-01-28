@@ -1,0 +1,31 @@
+#include "protheus.ch"
+
+namespace estoque.transferencia.refaturamento
+
+/*/ {Protheus.doc} ValidaEstornoRefaturamento
+
+Validar se transferencia pode ser estornada, caso seja gerada via refaturamento
+
+@type function
+@author Elcilei Lopes - DsmSolutions
+@since 09/12/2025
+@version P12
+@database ORACLE
+/*/
+User Function ValidaEstornoRefaturamento()
+	Local lRet  					:= .T.  as logical
+
+	Default cDocumento 				:= ""
+	Default lEstornoRefaturamento	:= .F.
+
+	If !( lEstornoRefaturamento)
+		dbSelectArea("SZ7")
+		SZ7->(dbSetOrder(4))
+
+		If ( SZ7->(dbSeek(FWxFilial("SZ7")+cDocumento)) ) .And. ( SZ7->Z7_STATUS == "2")
+			FWAlertWarning("Transferência não pode ser estornada."+CRLF+"Gerada pelo processo de refaturamento.","Estorno de Transferência")
+			lRet := .F.
+		Endif
+	Endif
+	
+Return lRet

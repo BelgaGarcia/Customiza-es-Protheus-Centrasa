@@ -1,0 +1,1852 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace producao.op
+
+/*/{Protheus.doc} apontamentoRolo
+
+Apontamento Rolo
+
+@type Function
+@author Gabriel Goncalves
+@since 24/11/2024
+@version P12
+@database MSSQL
+
+/*/
+User Function apontamentoRolo(cAlias, nRegistro)
+	Private oTelaApontamento		as object
+	Private oLayerApontamento		as object
+	Private oGridApontamento		as object
+	Private oListaBotoes			as object
+
+	Private aOperacoes				:= {}	as array
+	Private aHeader				 	:= {}	as array
+	Private aCols					:= {}	as array
+	Private cAliasTela				:= cAlias	as character
+	Private nRegistroTela			:= nRegistro	as integer
+
+	Private cEspessuraLIE			:= ""	as character
+	Private cEspessuraLSE			:= ""	as character
+	Private cRebarbaLIE				:= ""	as character
+	Private cRebarbaLSE				:= ""	as character
+	Private cLarguraLIE				:= ""	as character
+	Private cLarguraLSE				:= ""	as character
+	Private cFolgaLIE				:= ""	as character
+	Private cFolgaLSE				:= ""	as character
+	Private cCamberLIE				:= ""	as character
+	Private cCamberLSE				:= ""	as character
+	Private cDiametroInternoLIE		:= ""	as character
+	Private cDiametroInternoLSE		:= ""	as character
+	Private cDiametroExternoLIE		:= ""	as character
+	Private cDiametroExternoLSE		:= ""	as character
+	Private cDiferencaEixoLIE		:= ""	as character
+	Private cDiferencaEixoLSE		:= ""	as character
+
+	montaTelaApontamento()
+Return
+
+/*
+	Funcao caixao de dialogo para montagem da tela inicial
+*/
+Static Function montaTelaApontamento()
+	Local aSize	:= MsAdvSize() 	as array //Retorna dados sobre tamanho da tela
+
+	oTelaApontamento	:= MSDialog():New(0, 0, aSize[6], aSize[5], "Apontamento Rolo "+AllTrim((cAliasTela)->TMP_ORDEM)+" - Cod Insp:" +AllTrim((cAliasTela)->C5_ZINSPE)+" - Id:"+AllTrim((cAliasTela)->C5_ZLOTCTL);
+		+" - Cod Prod:"+AllTrim((cAliasTela)->C2_PRODUTO) +" - Desc Prod:"+AllTrim((cAliasTela)->TMP_DESPRD) ;
+		+" - Nome Cli:"+ AllTrim((cAliasTela)->A1_NOME) 	, , , .F., , , , , , .T., , , .T.) //Monta tela principal
+	oTelaApontamento:lMaximized := .T.
+
+	oLayerApontamento	:= FWLayer():New() //Cria paineis para segregar a tela
+	oLayerApontamento:Init(oTelaApontamento, .F.) //Relaciona paineis com Objeto pai (dialog principal)
+
+	//Cria as linhas para os Paineis
+	//oLayerApontamento:AddLine("SUPERIOR"	, 022, .T.)
+	oLayerApontamento:AddLine("CENTRAL"		, 085, .T.)
+	oLayerApontamento:AddLine("INFERIOR"	, 015, .T.)
+
+	//Cria as colunas no Painel Superior
+	//oLayerApontamento:AddCollumn("SUP_A"	, 100, .T., "SUPERIOR")
+
+	//Cria as colunas no Painel Central
+	oLayerApontamento:AddCollumn("CENT_A"	, 100, .T., "CENTRAL")
+
+	//Cria as colunas no Painel Inferior
+	oLayerApontamento:AddCollumn("INF_A"	, 100, .T., "INFERIOR")
+	//oLayerApontamento:AddCollumn("INF_B"	, 012, .T., "INFERIOR")
+
+	//Cria e posiciona as janelas nos Paineis Superiores
+	//oLayerApontamento:AddWindow("SUP_A"		, "CABECALHO"	, "Dados do Apontamento"	, 100, .F., .F., , "SUPERIOR" , )
+
+	//Cria e posiciona as janelas nos Paineis Centrais
+	oLayerApontamento:AddWindow("CENT_A"	, "OPERACOES"		, "Operacoes"				, 100, .F., .F., , "CENTRAL" , )
+
+	//Cria e posiciona as janelas nos Paineis Inferiores
+	oLayerApontamento:AddWindow("INF_A"		, "BOTOES"			, "Acoes"				, 100, .F., .F., , "INFERIOR" , )
+	//oLayerApontamento:AddWindow("INF_B"		, "LOTE"		, "Acoes"					, 100, .F., .F., , "INFERIOR" , )
+
+	montaListaOperacoes()
+	montaBotoes()
+
+	ACTIVATE MSDIALOG oTelaApontamento CENTERED
+Return
+
+/*
+	Monta Lista de Itens
+*/
+Static Function montaListaOperacoes()
+	Local aAlter		:= {}
+	Local nOpc         	:= GD_INSERT+GD_UPDATE+GD_DELETE			// GD_INSERT+GD_UPDATE+GD_DELETE
+	Local cLinOk       	:= "producao.op.u_validaLinhaRolo()"		// Funcao executada para validar o contexto da linha atual do aCols
+	Local cTudoOk      	:= "AllwaysTrue"		// Funcao executada para validar o contexto geral da MsNewGetDados (todo aCols)
+	Local nMax 			:= 99					// Numero maximo de linhas permitidas. Valor padrao 99
+	Local cFieldOk 		:= "producao.op.u_validaFieldRolo()"		// Funcao executada na validacao do campo
+	Local cSuperDel 	:= ""					// Funcao executada quando pressionada as teclas <Ctrl>+<Delete>
+	Local cDelOk 		:= "producao.op.u_validaDeleteLinhaRolo()"		// Funcao executada para validar a exclusao de uma linha do aCols
+	Local bChange		:= { ||  }
+	Local cTela			:= NIL
+	Local cOperacoes	:= "ST=SETUP;SD=SHUTDOWN"
+	Local nOperacao		:= 0
+
+	For nOperacao := 1 To 99
+		cOperacoes	+= ";"+ StrZero(nOperacao, 2) + "=" + StrZero(nOperacao, 2)
+	Next nOperacao
+
+	aAdd( aHeader,	{"Operacao"					,"XX_OPERAC"	,""					,02,0,"AllwaysTrue()","","C","","R",cOperacoes,"",""}	)
+	aAdd( aHeader,	{"Data"						,"XX_DATA"		,""					,08,0,"AllwaysTrue()","","D","","R","","",""}	)
+	aAdd( aHeader,	{"Horario"					,"XX_HORARIO"	,"99:99"			,05,0,"AllwaysTrue()","","C","","R","","Time()",""}	)
+	aAdd( aHeader,	{"Cod.Micrometro"			,"XX_CODMIC"	,""					,06,0,"AllwaysTrue()","","C","ZQM2","R","","",""}	)
+	aAdd( aHeader,	{"Espessura(mm)"			,"XX_ESPESSU"	,""					,30,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Rebarba(mm)"				,"XX_REBARBA"	,""					,30,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Cod.Paquimetro/Trena"		,"XX_CODPAQ1"	,""					,06,0,"AllwaysTrue()","","C","ZQM2","R","","",""}	)
+	aAdd( aHeader,	{"Largura(mm)"				,"XX_LARGURA"	,""					,39,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Cod.Regua"				,"XX_CODREGU"	,""					,06,0,"AllwaysTrue()","","C","ZQM2","R","","",""}	)
+	aAdd( aHeader,	{"Folga.Facas"				,"XX_FOLGA"		,""					,32,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Camber"					,"XX_CAMBER"	,""					,32,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Cod.Paquimetro"			,"XX_CODPAQ2"	,""					,06,0,"AllwaysTrue()","","C","ZQM2","R","","",""}	)
+	aAdd( aHeader,	{"Diametro.Interno"			,"XX_DIAINT"	,""					,42,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Diametro.Externo"			,"XX_DIAEXT"	,""					,42,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Diferenca.Eixo(mm)"		,"XX_DIFEIXO"	,""					,32,0,"AllwaysTrue()","","C","","R","","",""}	)
+	aAdd( aHeader,	{"Aspecto.Visual"			,"XX_ASPVISU"	,""					,01,0,"AllwaysTrue()","","C","","R","S=OK;N=N OK","",""}	)
+	aAdd( aHeader,	{"Aprovado/Reprovado"		,"XX_APROV1"	,""					,01,0,"AllwaysTrue()","","C","","R","D=Digitando;A=Aprovado;R=Reprovado","'D'",""}	)
+	aAdd( aHeader,	{"Qtde.Pecas"				,"XX_QTDPECA"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
+	aAdd( aHeader,	{"Peso.Bruto"				,"XX_PESOBRU"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
+	aAdd( aHeader,	{"Peso.Liquido"				,"XX_PESOLIQ"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
+	aAdd( aHeader,	{"Conforme.Solicitado?"		,"XX_SOLICIT"	,""					,01,0,"AllwaysTrue()","","C","","R","S=Sim;N=Nao","",""}	)
+	aAdd( aHeader,	{"Aprovado/Reprovado"		,"XX_APROV2"	,""					,01,0,"AllwaysTrue()","","C","","R","A=Aprovado;R=Reprovado","",""}	)
+	//aAdd( aHeader,	{"RecnoSZ4"					,"XX_RECNO"		,""					,15,0,"AllwaysTrue()","","C","","R","","",""}	)
+
+	aAdd( aHeader,	{"RecnoSZ4"					,;
+		"XX_RECNO"		,;
+		""					,;
+		15,;
+		0,;
+		"AllwaysTrue()",;
+		GetSX3Cache("AB8_FILIAL","X3_USADO") ,;
+		"N",;
+		"",;
+		"V",;
+		"",;
+		"",;
+		".F.",;
+		"V",;
+		"",;
+		"",;
+		".F."}	)
+
+
+	aAdd( aHeader,	{"Apontado?"				,"XX_APONTOK"	,""					,01,0,"AllwaysTrue()","","C","","R","S=Sim;N=Nao","'N'",""}	)
+
+	aAlter		:= {	"XX_OPERAC", "XX_DATA", "XX_HORARIO",;
+		"XX_CODMIC", "XX_ESPESSU", "XX_REBARBA",;
+		"XX_CODPAQ1", "XX_LARGURA", "XX_CODREGU",;
+		"XX_FOLGA", "XX_CAMBER", "XX_CODPAQ2",;
+		"XX_DIAINT", "XX_DIAEXT", "XX_DIFEIXO",;
+		"XX_ASPVISU", "XX_QTDPECA", "XX_PESOBRU",;
+		"XX_PESOLIQ", "XX_SOLICIT", "XX_APROV2","XX_RECNO";
+		}
+
+	zeraArrayOperacoes()
+
+	oGridApontamento := MsNewGetDados():New(1,1,240,185,nOpc,cLinOk,cTudoOk,/*cIniCpos*/,;
+		aAlter,/*nFreeze*/,nMax,cFieldOk,cSuperDel,cDelOk,oLayerApontamento:GetWinPanel("CENT_A", "OPERACOES", "CENTRAL"),aHeader,aCols,bChange,cTela)
+
+	oGridApontamento:SetArray( aOperacoes )
+	oGridApontamento:oBrowse:align := CONTROL_ALIGN_ALLCLIENT
+Return
+
+/*
+	Monta grupo de botoes na tela
+*/
+Static Function montaBotoes()
+	Local nPosVert		:= 0	as integer
+	Local oBotaoSalvar			as object
+	Local oBotaoGravar			as object
+	Local oBotaoConhecimento	as object
+	Local oBotaoObservacao		as object
+	Local oBotaoSair			as object
+	Local oBotaoEtiqueta		as object
+	Local nTamanhoBotao	:= 90	as integer
+
+	oListaBotoes	:= oLayerApontamento:GetWinPanel("INF_A", "BOTOES", "INFERIOR")
+
+	oBotaoSalvar		:= TButton():New( nPosVert	,	0							,	"Salvar"			, oListaBotoes, {|| if (u_validaLinhaRolotudook('S'),salvaApontamento(),'')} 	, nTamanhoBotao, 020, , , , .T., , , , , , )
+	oBotaoGravar		:= TButton():New( nPosVert	,	nTamanhoBotao + 5			,	"Aprovação Final"	, oListaBotoes, {|| if (u_validaLinhaRolotudook('A'),processaApontamento(),'')}	, nTamanhoBotao, 020, , , , .T., , , , , , )
+	oBotaoEtiqueta		:= TButton():New( nPosVert	,	( nTamanhoBotao + 5 ) * 2	,	"Etiqueta"			, oListaBotoes, {|| producao.etiquetas.u_etiquetaAberturaOp(AllTrim((cAliasTela)->TMP_ORDEM))}	, nTamanhoBotao, 020, , , , .T., , , , , , )
+	oBotaoConhecimento	:= TButton():New( nPosVert	,	( nTamanhoBotao + 5 ) * 3	,	"Conhecimento"		, oListaBotoes, {|| estoque.conhecimento.u_Produto(cAliasTela,nil,nil)}	, nTamanhoBotao, 020, , , , .T., , , , , , )
+	oBotaoObservacao	:= TButton():New( nPosVert	,	( nTamanhoBotao + 5 ) * 4	,	"Observação"		, oListaBotoes, {|| ShowLog((cAliasTela)->C2_ZOBS)}	, nTamanhoBotao, 020, , , , .T., , , , , , )
+	oBotaoSair			:= TButton():New( nPosVert	,	( nTamanhoBotao + 5 ) * 5	,	"Sair"				, oListaBotoes, {|| cancelaApontamento()}	, nTamanhoBotao, 020, , , , .T., , , , , , )
+Return
+
+/*
+	Cancela o apontamento
+*/
+Static Function cancelaApontamento()
+	oTelaApontamento:End()
+Return
+
+/*
+	Zera os arrays com os dados dos produtos e lotes
+*/
+Static Function zeraArrayOperacoes()
+	Local nPosHeader	:= 0
+	Local cTipoDado		:= ""
+
+	aOperacoes		:= {{}}
+
+	//aAdd(aOperacoes		, {" ", StoD(""), " ", " ", 0, 0, " ", 0, 0, " ", 0, " ", 0, 0, " ", " ", " ", 0, " ", " ", 0, 0, 0, " ", .F.})
+	For nPosHeader := 1 To Len(aHeader)
+		cTipoDado	:= aHeader[nPosHeader][8]
+
+		If cTipoDado == "C"
+			aAdd(aOperacoes[1]	, Space(aHeader[nPosHeader][4]))
+		ElseIf cTipoDado == "N"
+			aAdd(aOperacoes[1]	, 0)
+		ElseIf cTipoDado == "D"
+			aAdd(aOperacoes[1]	, StoD(""))
+		EndIf
+	Next nPosHeader
+
+	aAdd(aOperacoes[1]	, .F.)
+
+	buscarLimitesMedicoes()
+	buscarApontamentos()
+Return
+
+/*
+	Busca limites das medicoes
+*/
+Static Function buscarLimitesMedicoes()
+	Local cQuery	:= ""	as character
+
+	cQuery := 	queryBuscarLimitesMedicoes()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		If AllTrim((cAlias)->QP1_DESCPO) == "ESPESSURA"
+			aOperacoes[1][5]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cEspessuraLIE		:= AllTrim((cAlias)->QP7_LIE)
+			cEspessuraLSE		:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "REBARBA"
+			aOperacoes[1][6]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cRebarbaLIE			:= AllTrim((cAlias)->QP7_LIE)
+			cRebarbaLSE			:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "LARGURA"
+			aOperacoes[1][8]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cLarguraLIE			:= AllTrim((cAlias)->QP7_LIE)
+			cLarguraLSE			:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "FOLGA DE FACAS"
+			aOperacoes[1][10]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cFolgaLIE			:= AllTrim((cAlias)->QP7_LIE)
+			cFolgaLSE			:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "CAMBER"
+			aOperacoes[1][11]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cCamberLIE			:= AllTrim((cAlias)->QP7_LIE)
+			cCamberLSE			:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "DIAMETRO INTERNO"
+			aOperacoes[1][13]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cDiametroInternoLIE	:= AllTrim((cAlias)->QP7_LIE)
+			cDiametroInternoLSE	:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "DIAMETRO EXTERNO"
+			aOperacoes[1][14]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cDiametroExternoLIE	:= AllTrim((cAlias)->QP7_LIE)
+			cDiametroExternoLSE	:= AllTrim((cAlias)->QP7_LSE)
+		ElseIf AllTrim((cAlias)->QP1_DESCPO) == "DIFERENCA X E Y"
+			aOperacoes[1][15]	:= "N "+AllTrim((cAlias)->QP7_NOMINA)+"  |  LI "+AllTrim((cAlias)->QP7_LIE)+"  |  LS "+AllTrim((cAlias)->QP7_LSE)
+			cDiferencaEixoLIE	:= AllTrim((cAlias)->QP7_LIE)
+			cDiferencaEixoLSE	:= AllTrim((cAlias)->QP7_LSE)
+		EndIf
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query dos limites de medicao
+*/
+Static Function queryBuscarLimitesMedicoes()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT * FROM ( " + CRLF
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        QP7_ENSAIO "		+ CRLF
+	cQuery += "        ,QP7_NOMINA "	+ CRLF
+	cQuery += "        ,QP7_LIE "		+ CRLF
+	cQuery += "        ,QP7_LSE "		+ CRLF
+	cQuery += "        ,QP7_REVI "		+ CRLF
+	cQuery += "        ,QP1_DESCPO "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC2") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("QP7") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("QP7") + CRLF
+	cQuery += " 	    AND QP7_PRODUT = C2_PRODUTO" + CRLF
+	cQuery += " 	    AND QP7_REVI = C2_REVI " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("QP7") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("QP1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("QP1") + CRLF
+	cQuery += " 	    AND QP1_ENSAIO = QP7_ENSAIO" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("QP1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC2") + CRLF
+	cQuery += " 		AND C2_NUM||C2_ITEM||C2_SEQUEN  = '"+AllTrim((cAliasTela)->TMP_ORDEM)+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC2") + CRLF
+
+	cQuery += " UNION ALL " + CRLF
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        QP8_ENSAIO QP7_ENSAIO "	+ CRLF
+	cQuery += "        ,'' QP7_NOMINA "	+ CRLF
+	cQuery += "        ,'' QP7_LIE "	+ CRLF
+	cQuery += "        ,'' QP7_LSE "	+ CRLF
+	cQuery += "        ,QP8_REVI QP7_REVI "	+ CRLF
+	cQuery += "        ,QP1_DESCPO "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC2") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("QP8") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("QP8") + CRLF
+	cQuery += " 	    AND QP8_PRODUT = C2_PRODUTO" + CRLF
+	cQuery += " 	    AND QP8_REVI = C2_REVI " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("QP8") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("QP1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("QP1") + CRLF
+	cQuery += " 	    AND QP1_ENSAIO = QP8_ENSAIO" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("QP1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC2") + CRLF
+	cQuery += " 		AND C2_NUM||C2_ITEM||C2_SEQUEN  = '"+AllTrim((cAliasTela)->TMP_ORDEM)+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC2") + CRLF
+
+	cQuery += " )T " + CRLF
+	cQuery += " ORDER BY QP7_ENSAIO " + CRLF
+Return cQuery
+
+/*
+	Busca apontamentos existentes
+*/
+Static Function buscarApontamentos()
+	Local cQuery	:= ""	as character
+
+	cQuery := 	queryBuscarApontamentos()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		aAdd(aOperacoes	,{	(cAlias)->Z4_OPERAC,;
+			StoD((cAlias)->Z4_DATA),;
+			(cAlias)->Z4_HORARIO,;
+			(cAlias)->Z4_CODMIC,;
+			(cAlias)->Z4_ESPESSU,;
+			(cAlias)->Z4_REBARBA,;
+			(cAlias)->Z4_CODPAQ1,;
+			(cAlias)->Z4_LARGURA,;
+			(cAlias)->Z4_CODREGU,;
+			(cAlias)->Z4_FOLGA,;
+			(cAlias)->Z4_CAMBER,;
+			(cAlias)->Z4_CODPAQ2,;
+			(cAlias)->Z4_DIAINT,;
+			(cAlias)->Z4_DIAEXT,;
+			(cAlias)->Z4_DIFEIXO,;
+			(cAlias)->Z4_ASPVISU,;
+			(cAlias)->Z4_APROV1,;
+			(cAlias)->Z4_QTDPECA,;
+			(cAlias)->Z4_PESOBRU,;
+			(cAlias)->Z4_PESOLIQ,;
+			(cAlias)->Z4_SOLICIT,;
+			(cAlias)->Z4_APROV2,;
+			(cAlias)->R_E_C_N_O_,;
+			(cAlias)->Z4_APONTOK,;
+			,	.F.})
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query dos apontamentos
+*/
+Static Function queryBuscarApontamentos()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        * "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SZ4") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ4") + CRLF
+	cQuery += " 		AND Z4_OP  = '"+AllTrim((cAliasTela)->TMP_ORDEM)+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ4") + CRLF
+
+	cQuery += " ORDER BY SZ4.R_E_C_N_O_"
+Return cQuery
+
+/*
+	Query dos apontamentos
+*/
+Static Function queryBuscarRecursos()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        H8_OPER "		+ CRLF
+	cQuery += "        ,H8_RECURSO "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SH8") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SH8") + CRLF
+	cQuery += " 		AND H8_OP  = '"+AllTrim((cAliasTela)->TMP_ORDEM)+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SH8") + CRLF
+
+	cQuery += " ORDER BY SH8.R_E_C_N_O_"
+Return cQuery
+
+Static Function queryBuscarRecursosSG2()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        G2_OPERAC AS H8_OPER"		+ CRLF
+	cQuery += "        ,G2_RECURSO AS H8_RECURSO"		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SG2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SG2") + CRLF
+	cQuery += " 		AND G2_PRODUTO  = '"+AllTrim((cAliasTela)->C2_PRODUTO)+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SG2") + CRLF
+
+	cQuery += " ORDER BY SG2.R_E_C_N_O_"
+Return cQuery
+
+/*
+	Refresh nas telas
+*/
+Static Function refreshTela()
+	oTelaApontamento:Refresh()
+	oGridApontamento:ForceRefresh()
+Return
+
+/*
+	Validacoes dos campos do apontamento no grid
+*/
+User Function validaFieldRolo()
+	Local lRetorno				:= .T.	as logical
+	Local cUltimoApontamento	:= "00"	as character
+	Local nItemGrid				:= 0	as integer
+
+	Private cCampo	:= ReadVar()	as character
+
+	If oGridApontamento:nAt == 1
+		lRetorno	:= .F.
+		FWAlertWarning("A primeira linha não pode ser editada, somente consulta das informações.", "Linha de Consulta")
+	ElseIf oGridApontamento:aCols[oGridApontamento:nAt][24] == "S"
+		lRetorno	:= .F.
+		FWAlertWarning("Apontamento já realizado para essa linha, não pode ser editada.", "Apontamento Realizado")
+	Else
+		Do Case
+			Case cCampo == "M->XX_OPERAC"
+				If oGridApontamento:nAt == 2 .And. !(XX_OPERAC == "ST")
+					lRetorno	:= .F.
+					FWAlertWarning("A primeira operação deve ser o SETUP.", "SETUP")
+				ElseIf oGridApontamento:nAt > 2 .And. XX_OPERAC == "ST"
+					lRetorno	:= .F.
+					FWAlertWarning("SETUP só pode ser a primeira operação.", "SETUP")
+				ElseIf !(XX_OPERAC $ "ST/SD")
+					For nItemGrid := 2 To oGridApontamento:nAt-1
+						If !(oGridApontamento:aCols[nItemGrid][1] $ "ST/SD") .And. !(oGridApontamento:aCols[nItemGrid][Len(oGridApontamento:aCols[nItemGrid])])
+							cUltimoApontamento	:= oGridApontamento:aCols[nItemGrid][1]
+						EndIf
+					Next nItemGrid
+
+					If !(Soma1(cUltimoApontamento) == XX_OPERAC)
+						lRetorno	:= .F.
+						FWAlertWarning("Operação fora da sequência.", "Operação")
+					EndIf
+				EndIf
+
+			Case cCampo == "M->XX_DATA"
+				If !(XX_DATA == Date())
+					lRetorno	:= .F.
+					FWAlertWarning("Data inválida para apontamento.", "Data")
+				EndIf
+
+			Case cCampo == "M->XX_HORARIO"
+				If !(AtVldHora(XX_HORARIO))
+					lRetorno	:= .F.
+					FWAlertWarning("Horário inválido.", "Hora")
+				EndIf
+
+			Case cCampo == "M->XX_CODMIC"
+				If !(ExistCpo("QM2", XX_CODMIC))
+					lRetorno	:= .F.
+				EndIf
+
+			Case cCampo == "M->XX_CODPAQ1"
+				If !(ExistCpo("QM2", XX_CODPAQ1))
+					lRetorno	:= .F.
+				EndIf
+
+			Case cCampo == "M->XX_CODREGU"
+				If !(ExistCpo("QM2", XX_CODREGU))
+					lRetorno	:= .F.
+				EndIf
+
+			Case cCampo == "M->XX_CODPAQ2"
+				If !(ExistCpo("QM2", XX_CODPAQ2))
+					lRetorno	:= .F.
+				EndIf
+
+			Case cCampo == "M->XX_PESOBRU"
+				If XX_PESOBRU <= 0 .AND. SUBSTR(oGridApontamento:aCols[oGridApontamento:nAt][1], 1, 1) <> "S"
+					lRetorno	:= .F.
+					FWAlertWarning("Peso bruto menor ou igual a zero.", "Peso")
+				ElseIf oGridApontamento:aCols[oGridApontamento:nAt][20] > 0 .And. XX_PESOBRU < oGridApontamento:aCols[oGridApontamento:nAt][20]
+					lRetorno	:= .F.
+					FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
+				EndIf
+
+			Case cCampo == "M->XX_PESOLIQ"
+				If XX_PESOLIQ <= 0 .AND. SUBSTR(oGridApontamento:aCols[oGridApontamento:nAt][1], 1, 1) <> "S"
+					lRetorno	:= .F.
+					FWAlertWarning("Peso liquido menor ou igual a zero.", "Peso")
+				ElseIf oGridApontamento:aCols[oGridApontamento:nAt][19] > 0 .And. oGridApontamento:aCols[oGridApontamento:nAt][19] < XX_PESOLIQ
+					lRetorno	:= .F.
+					FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
+				EndIf
+
+		EndCase
+	EndIf
+Return lRetorno
+
+/*
+	Validacoes da linha do apontamento no grid
+*/
+User Function validaLinhaRolo()
+	Local	lRetorno	:= .T.	as logical
+
+	If !(oGridApontamento:nAt == 1)
+		atualizaStatus(oGridApontamento:nAt)
+
+		If oGridApontamento:aCols[oGridApontamento:nAt][17] == "D"
+			lRetorno	:= .F.
+			FWAlertWarning("Linha ainda em digitação.", "Digitação")
+		EndIf
+	EndIf
+Return lRetorno
+
+
+/*
+	Validacoes da linha no tudo ok
+*/
+User Function validaLinhaRolotudook(ctipo)
+	Local lRetorno := .T. as logical
+	Local nx       := 1   as integer
+	Local nPesob	:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOBRU"    })
+	Local nPesol	:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOLIQ"    })
+
+	for nx:=2 to len(oGridApontamento:aCols)
+
+		IF  SUBSTR(oGridApontamento:aCols[nx][1], 1, 1) <> "S" .and. ctipo == "A"
+			IF  oGridApontamento:aCols[nx][nPesob] <= 0
+				FWAlertWarning("Peso bruto menor ou igual a zero.", "Peso")
+				Return .F.
+			EndIf
+
+
+			IF  oGridApontamento:aCols[nx][nPesol] <= 0
+				FWAlertWarning("Peso liquido menor ou igual a zero.", "Peso")
+				Return .F.
+			Endif
+		EndIf
+
+		atualizaStatus(nx)
+		If oGridApontamento:aCols[nx][17] == "D"
+			lRetorno	:= .F.
+			FWAlertWarning("Linha ainda em digitação.", "Digitação")
+			nx:=len(oGridApontamento:aCols)
+		EndIf
+	next nx
+Return lRetorno
+
+/*
+	Atualiza status da linha
+*/
+Static Function atualizaStatus(nLinha)
+	Local lAprovado	:= .T.	as logical
+
+	If Empty(oGridApontamento:aCols[nLinha][5]) .Or. Empty(oGridApontamento:aCols[nLinha][6]);
+			.Or. Empty(oGridApontamento:aCols[nLinha][8]) .Or. Empty(oGridApontamento:aCols[nLinha][10]);
+			.Or. Empty(oGridApontamento:aCols[nLinha][11]) .Or. Empty(oGridApontamento:aCols[nLinha][13]);
+			.Or. Empty(oGridApontamento:aCols[nLinha][14]) .Or. Empty(oGridApontamento:aCols[nLinha][15]);
+			.Or. Empty(oGridApontamento:aCols[nLinha][16])
+		oGridApontamento:aCols[nLinha][17]	:= "D"
+	Else
+		If !Empty(cEspessuraLIE) .And. !Empty(cEspessuraLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][5], cEspessuraLIE, cEspessuraLSE)
+		EndIf
+
+		If !Empty(cRebarbaLIE) .And. !Empty(cRebarbaLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][6], cRebarbaLIE, cRebarbaLSE)
+		EndIf
+
+		If !Empty(cLarguraLIE) .And. !Empty(cLarguraLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][8], cLarguraLIE, cLarguraLSE)
+		EndIf
+
+		If !Empty(cFolgaLIE) .And. !Empty(cFolgaLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][10], cFolgaLIE, cFolgaLSE)
+		EndIf
+
+		If !Empty(cCamberLIE) .And. !Empty(cCamberLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][11], cCamberLIE, cCamberLSE)
+		EndIf
+
+		If !Empty(cDiametroInternoLIE) .And. !Empty(cDiametroInternoLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][13], cDiametroInternoLIE, cDiametroInternoLSE)
+		EndIf
+
+		If !Empty(cDiametroExternoLIE) .And. !Empty(cDiametroExternoLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][14], cDiametroExternoLIE, cDiametroExternoLSE)
+		EndIf
+
+		If !Empty(cDiferencaEixoLIE) .And. !Empty(cDiferencaEixoLSE) .And. lAprovado
+			lAprovado	:= compararMedicao(oGridApontamento:aCols[nLinha][15], cDiferencaEixoLIE, cDiferencaEixoLSE)
+		EndIf
+
+		If oGridApontamento:aCols[nLinha][16] == "N"
+			lAprovado	:= .F.
+		EndIf
+
+		If lAprovado
+			oGridApontamento:aCols[nLinha][17]	:= "A"
+		Else
+			oGridApontamento:aCols[nLinha][17]	:= "R"
+		EndIf
+	EndIf
+Return
+
+/*
+	Comparar os valores da medicao
+*/
+Static Function compararMedicao(cValor, cInferior, cSuperior)
+	Local lRetorno	:= .F.	as logical
+
+	If Val(AllTrim(cValor)) >= Val(AllTrim(cInferior)) .And. Val(AllTrim(cValor)) <= Val(AllTrim(cSuperior))
+		lRetorno	:= .T.
+	EndIf
+Return lRetorno
+
+/*
+	Salva Apontamento
+*/
+Static Function salvaApontamento()
+	Local nItemGrid		:= 0	as integer
+	Local lNovoRegistro	:= .T.	as logical
+	Local nPosdgt:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })
+
+	DbSelectArea("SZ4")
+
+	For nItemGrid := 2 To Len(oGridApontamento:aCols)
+		If Empty(oGridApontamento:aCols[nItemGrid][23])
+			lNovoRegistro	:= .T.
+		Else
+			lNovoRegistro	:= .F.
+			SZ4->(DbGoTop())
+			SZ4->(DbGoTo(oGridApontamento:aCols[nItemGrid][23]))
+		EndIf
+
+		If !(oGridApontamento:aCols[nItemGrid][Len(oGridApontamento:aCols[nItemGrid])])
+			Reclock("SZ4", lNovoRegistro)
+			SZ4->Z4_FILIAL	:= xFilial("SZ4")
+			SZ4->Z4_OP		:= AllTrim((cAliasTela)->TMP_ORDEM)
+			SZ4->Z4_OPERAC	:= oGridApontamento:aCols[nItemGrid][1]
+			SZ4->Z4_DATA	:= oGridApontamento:aCols[nItemGrid][2]
+			SZ4->Z4_HORARIO	:= oGridApontamento:aCols[nItemGrid][3]
+			SZ4->Z4_CODMIC	:= oGridApontamento:aCols[nItemGrid][4]
+			SZ4->Z4_ESPESSU	:= AllTrim(oGridApontamento:aCols[nItemGrid][5])
+			SZ4->Z4_REBARBA	:= AllTrim(oGridApontamento:aCols[nItemGrid][6])
+			SZ4->Z4_CODPAQ1	:= oGridApontamento:aCols[nItemGrid][7]
+			SZ4->Z4_LARGURA	:= AllTrim(oGridApontamento:aCols[nItemGrid][8])
+			SZ4->Z4_CODREGU	:= oGridApontamento:aCols[nItemGrid][9]
+			SZ4->Z4_FOLGA	:= AllTrim(oGridApontamento:aCols[nItemGrid][10])
+			SZ4->Z4_CAMBER	:= AllTrim(oGridApontamento:aCols[nItemGrid][11])
+			SZ4->Z4_CODPAQ2	:= oGridApontamento:aCols[nItemGrid][12]
+			SZ4->Z4_DIAINT	:= oGridApontamento:aCols[nItemGrid][13]
+			SZ4->Z4_DIAEXT	:= oGridApontamento:aCols[nItemGrid][14]
+			SZ4->Z4_DIFEIXO	:= AllTrim(oGridApontamento:aCols[nItemGrid][15])
+			SZ4->Z4_ASPVISU	:= oGridApontamento:aCols[nItemGrid][16]
+			SZ4->Z4_APROV1	:= oGridApontamento:aCols[nItemGrid][17]
+			SZ4->Z4_QTDPECA	:= oGridApontamento:aCols[nItemGrid][18]
+			SZ4->Z4_PESOBRU	:= oGridApontamento:aCols[nItemGrid][19]
+			SZ4->Z4_PESOLIQ	:= oGridApontamento:aCols[nItemGrid][20]
+			SZ4->Z4_SOLICIT	:= oGridApontamento:aCols[nItemGrid][21]
+			SZ4->Z4_APROV2	:= oGridApontamento:aCols[nItemGrid][22]
+			SZ4->Z4_APONTOK	:= oGridApontamento:aCols[nItemGrid][nPosdgt]
+			SZ4->(MsUnlock())
+		ElseIf !lNovoRegistro
+			Reclock("SZ4", lNovoRegistro)
+			SZ4->(DbDelete())
+			SZ4->(MsUnlock())
+		EndIf
+	Next nItemGrid
+
+	zeraArrayOperacoes()
+	oGridApontamento:SetArray( aOperacoes )
+	refreshTela()
+
+	FWAlertSuccess("Registro salvo com sucesso.", "Salvar")
+Return
+
+/*
+	Valida delete da linha do apontamento
+*/
+User Function validaDeleteLinhaRolo()
+	Local	lRetorno	:= .F.	as logical
+
+	If oGridApontamento:nAt == Len(oGridApontamento:aCols)
+		If oGridApontamento:aCols[oGridApontamento:nAt][24] == "S"
+			FWAlertWarning("Linha já apontada não pode ser deletada.", "Delete")
+		Else
+			lRetorno	:= .T.
+		EndIf
+	Else
+		FWAlertWarning("Somente a ultima linha pode ser deletada.", "Delete")
+	EndIf
+Return lRetorno
+
+/*
+	Processa Apontamento
+*/
+Static Function processaApontamento()
+	Private oProcess		:= Nil	as object
+
+	oProcess	:=	MsNewProcess():New( { |lEnd| gravaApontamento() },"Apontamento","Executando...",.T.)
+	oProcess:Activate()
+Return
+
+/*
+	Grava os dados do apontamento
+*/
+Static Function gravaApontamento()
+	Local cQuery           := "" as character
+	Local aVetorSH6        := {} as array
+	Local cAliasRecurso    := "" as character
+	Local aRecursos        := {} as array
+	Local nOperacao        := 1  as integer
+	Local cHorario         := "" as character
+	// Local nPosdgt          := aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK" })
+
+	Private lAutoErrNoFile := .T.
+	Private lMsErroAuto    := .F.
+	Private lContinua	   := .T.
+
+	oProcess:SetRegua1(3)
+	oProcess:IncRegua1("Salvando Dados...")
+
+	salvaApontamento()
+
+	// cQuery := 	queryBuscarRecursos()
+	cQuery := 	queryBuscarRecursosSG2()
+
+	MPSysOpenQuery( cQuery, cAliasRecurso := GetNextAlias() )
+	While (cAliasRecurso)->(!EoF())
+		aAdd(aRecursos, {(cAliasRecurso)->H8_OPER, (cAliasRecurso)->H8_RECURSO})
+		(cAliasRecurso)->(DbSkip())
+	EndDo
+	(cAliasRecurso)->(DbCloseArea())
+
+	cQuery := 	queryBuscarApontamentos()
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	oProcess:IncRegua1("Gerando Apontamentos...")
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		If (cAlias)->Z4_QTDPECA > 0 .And. !((cAlias)->Z4_APROV1 == "D") .And. !((cAlias)->Z4_APROV2 == "D") .And. !((cAlias)->Z4_OPERAC $ "ST/SD") .And. !((cAlias)->Z4_APONTOK == "S")
+			cHorario	:= (cAlias)->Z4_HORARIO
+
+			Begin Transaction
+
+				If Len(aRecursos) == 2
+
+					If lContinua
+						oProcess:IncRegua2("Baixando Saldo Empenhado...")
+						If !baixarEmpenho()
+							DisarmTransaction()
+							lContinua := .F.
+						EndIf
+					EndIf
+					If lContinua
+						For nOperacao := 1 To Len(aRecursos)
+
+
+							oProcess:SetRegua2(7)
+							oProcess:IncRegua2("Gravando Apontamento...")
+
+							SB1->(DbSeek(xFilial("SB1")+(cAliasTela)->C2_PRODUTO))
+
+
+							aLoteProduzido := dsm.genericos.U_fBuscaProximoLote((cAliasTela)->TMP_ORDEM, (cAliasTela)->C2_PRODUTO)
+
+
+							Begin Sequence
+								aVetorSH6 :=	{;
+									{"H6_OP"		,	(cAliasTela)->TMP_ORDEM		,	NIL},;
+									{"H6_PRODUTO"	,	(cAliasTela)->C2_PRODUTO	,	NIL},;
+									{"H6_OPERAC"	,	aRecursos[nOperacao][1]		,	NIL},; //Operação sequencial conforme SH8 - Operações alocadas para a Ordem de Produção;
+									{"H6_RECURSO"	,	aRecursos[nOperacao][2]		,	NIL},; //Recurso alocado conforme SH8;
+									{"H6_DTAPONT"	,	Date()						,	NIL},;
+									{"H6_DATAINI"	,	StoD((cAlias)->Z4_DATA)		,	NIL},;
+									{"H6_HORAINI"	,	cHorario		,	NIL},;
+									{"H6_DATAFIN"	,	StoD((cAlias)->Z4_DATA)		,	NIL},;
+									{"H6_HORAFIN"	,	IncTime(cHorario, 0, 1, 0)	,	NIL},;
+									{"H6_PT"		,	"P"							,	NIL},;
+									{"H6_LOTECTL"	,	aLoteProduzido[1]			,	NIL},;
+									{"H6_DTVALID"	,	aLoteProduzido[2]			,	NIL},;
+									{"H6_LOCAL"		,	(cAliasTela)->C2_LOCAL		,	NIL}} //Armazém padrão C2_LOCAL;
+
+								If SB1->B1_UM $ "KG|TL"
+									aAdd(aVetorSH6, {"H6_QTDPROD"	,	(cAlias)->Z4_PESOLIQ	,	NIL})
+									aAdd(aVetorSH6, {"H6_ZQUANT"	,	(cAlias)->Z4_QTDPECA	,	NIL})
+									aAdd(aVetorSH6, {"H6_ZPESOBT"	,	(cAlias)->Z4_PESOBRU	,	NIL})
+								Else
+									aAdd(aVetorSH6, {"H6_QTDPROD"	,	(cAlias)->Z4_QTDPECA	,	NIL})
+									aAdd(aVetorSH6, {"H6_ZPESO"		,	(cAlias)->Z4_PESOLIQ	,	NIL})
+									aAdd(aVetorSH6, {"H6_ZPESOBT"	,	(cAlias)->Z4_PESOBRU	,	NIL})
+								EndIf
+
+								lMsErroAuto := .F.
+
+								MSExecAuto({|x| MATA681(x)},aVetorSH6, 3)
+							End Sequence
+
+							If lMsErroAuto
+								cError := getError()
+								addLogs(cError)
+								FWAlertError("Apontamento não realizado.", "Apontamento")
+								DisarmTransaction()
+								lContinua := .F.
+								EXIT
+							EndIf
+
+							cHorario	:= IncTime(cHorario, 0, 2, 0)
+
+						Next nOperacao
+					EndIf
+				else
+					cError := getError()
+					addLogs(cError)
+					FWAlertError("Caadastro de Roteiro Invalido. Verifique as operacoes cadastradas", "Apontamento")
+					DisarmTransaction()
+					lContinua := .F.
+
+				endif
+				If lContinua
+					SZ4->(DbGoTop())
+					SZ4->(DbGoTo((cAlias)->R_E_C_N_O_))
+					If SZ4->(Recno()) == (cAlias)->R_E_C_N_O_
+						RecLock("SZ4", .F.)
+						SZ4->Z4_APONTOK	:= "S"
+						SZ4->Z4_LOTECTL	:= SH6->H6_LOTECTL
+						SZ4->(MsUnlock())
+					Else
+						FWAlertError("Confirmação do apontamento nao realizada. (SZ4)", "Apontamento")
+						DisarmTransaction()
+						lContinua := .F.
+					EndIf
+				EndIf
+
+				If lContinua
+					oProcess:IncRegua2("Endereçando Saldo Apontamento...")
+					If dsm.genericos.U_fValidaExisteEndereco("98", (cAliasTela)->A1_CGC)
+						If !enderecarApontamento()
+							cError := getError()
+							addLogs(cError)
+							FWAlertError("Apontamento não realizado.", "Apontamento")
+							DisarmTransaction()
+							lContinua := .F.
+						EndIf
+					Else
+						cError := getError()
+						addLogs(cError)
+						FWAlertError("Apontamento não realizado.", "Apontamento")
+						DisarmTransaction()
+						lContinua := .F.
+					EndIf
+				EndIf
+
+				If lContinua
+					oProcess:IncRegua2("Gravando Qualidade...")
+					If !gravaQualidade()
+						DisarmTransaction()
+						lContinua := .F.
+					EndIf
+				EndIf
+
+				If lContinua
+					If (cAlias)->Z4_APROV1 == "A"
+
+						If lContinua
+							oProcess:IncRegua2("Endereçando Saldo Qualidade...")
+							If dsm.genericos.U_fValidaExisteEndereco((cAliasTela)->C2_LOCAL, (cAliasTela)->A1_CGC)
+								If !enderecarQualidade()
+									DisarmTransaction()
+									lContinua := .F.
+								EndIf
+							Endif
+						EndIf
+
+						If lContinua
+							oProcess:IncRegua2("Baixando Empenho...")
+
+							If !(Substr(SH6->H6_OP,9,3) == "001")
+								//	u_alt381Auto("00023702002",  "020100000004   ",2990 ,0, "0002370200206",+AvKey('',"D4_NUMLOTE"), "42956441002740")
+								If 	!u_alt381Auto((cAliasTela)->TMP_ORDEM, (cAliasTela)->C2_PRODUTO,SH6->H6_QTDPROD,0, SH6->H6_LOTECTL,AvKey('',"D4_NUMLOTE"), (cAliasTela)->A1_CGC)
+									FWAlertError("Erro nabaixa de Empenho", "[alt381Auto]")
+									DisarmTransaction()
+									lContinua := .F.
+								EndIf
+							Endif
+
+							If Substr(SH6->H6_OP,9,3) == "001" // Somente executar para a O.P do Produto que esta no pedido de venda. Não executando para O.Ps filhas
+								oProcess:IncRegua2("Atualizando Pedido de Venda...")
+								dsm.genericos.U_fAddItemPedidoVendaProducao()
+							EndIf
+						EndIf
+					EndIf
+				EndIf
+			End Transaction
+		EndIf
+		(cAlias)->(DbSkip())
+	EndDo
+
+	If lContinua
+		FWAlertSuccess("Apontamento realizado.", "Apontamento")
+	Else
+		FWAlertError("Apontamento não realizado.", "Apontamento")
+	EndIf
+
+	zeraArrayOperacoes()
+	oGridApontamento:SetArray( aOperacoes )
+	refreshTela()
+Return
+
+/*
+	Baixar o empenho com lote correto
+*/
+Static Function baixarEmpenho()
+	Local cTMdaBaixa := GetNewPar("ZZ_TMBAIXA", "") as character
+	Local lSequencia := .T.                         as logical
+	Local nSeqSD3    := 1                           as integer
+	Local cSeqOP     := ""                          as character
+	Local cQuery     := ""                          as character
+	Local cSD4Alias  := ""                          as character
+	Local aCabecSD3  := {}                          as array
+	Local aItemSD3   := {}                          as array
+	Local aItensSD3  := {}                          as array
+	Local aArea      := getArea()                   as array
+	Local nQtdBaixa	 := 0							as integer
+
+	Do While lSequencia
+		cQuery := ""
+		cQuery += " SELECT *  " + CRLF
+		cQuery += " FROM " + RetSqlName("SD3") + " D3 " + CRLF
+		cQuery += " WHERE D3.D3_DOC = '" + Substr((cAliasTela)->TMP_ORDEM,1,6)+StrZero(nSeqSD3,3) + "' " + CRLF
+		cQuery += " AND D3.D_E_L_E_T_ <> '*' " + CRLF
+		cQuery += " AND D3.D3_FILIAL = '" + xFilial("SD3") + "' " + CRLF
+
+		dbUseArea(.T., "TOPCONN", TCGenQry(,,cQuery), "TRSD3", .F., .T.)
+
+		DbSelectArea("TRSD3")
+		dbGoTop()
+		If TRSD3->(EoF())
+			lSequencia := .F.
+		Else
+			nSeqSD3++
+		EndIf
+
+		DbSelectArea("TRSD3")
+		DbCloseArea()
+	EndDo
+
+	cSeqOP := StrZero(nSeqSD3,3)
+
+	cQuery := "SELECT * FROM "+RetSQLTab("SD4") + CRLF
+	Cquery += " WHERE 1=1 " + CRLF
+	cQuery += "	 AND " + RetSqlFil("SD4") + CRLF
+	cQuery += "  AND D4_OP = '"+(cAliasTela)->TMP_ORDEM+"' " + CRLF
+	cQuery += "  AND D4_LOTECTL = '"+(cAliasTela)->C5_ZLOTCTL+"' " + CRLF
+	cQuery += "	 AND " + RetSqlDel("SD4") + CRLF
+
+	cSD4Alias := MPSysOpenQuery( cQuery )
+
+	If (cSD4Alias)->(!EOF())
+
+		Begin Sequence	///(cAliasTela)->C2_PRODUTO
+			SB1->(DbSeek(xFilial("SB1") + (cSD4Alias)->D4_COD))
+
+			If SB1->B1_UM $ "KG|TL"
+				nQtdBaixa := SZ4->Z4_PESOLIQ
+			Else
+				nQtdBaixa := SZ4->Z4_QTDPECA
+			EndIf
+
+			aCabecSD3 :={{"D3_DOC" , Substr((cAliasTela)->TMP_ORDEM,1,6)+cSeqOP , NIL},;
+				{"D3_TM"     , cTMdaBaixa, NIL},;
+				{"D3_EMISSAO", dDataBase , NIL}}
+			// {"D3_CC"     , SB1->B1_CC, NIL},;
+
+			aItemSD3  :={{"D3_COD" , (cSD4Alias)->D4_COD , NIL},;
+				{"D3_OP"     , (cAliasTela)->TMP_ORDEM , NIL},;
+				{"D3_UM"     , SB1->B1_UM              , NIL},;
+				{"D3_QUANT"  , nQtdBaixa               , NIL},;
+				{"D3_LOCAL"  , (cSD4Alias)->D4_LOCAL   , NIL},;
+				{"D3_GRUPO"  , SB1->B1_GRUPO           , NIL},;
+				{"D3_LOTECTL", (cAliasTela)->C5_ZLOTCTL, NIL},;
+				{"D3_LOCALIZ", (cAliasTela)->A1_CGC    , NIL}}
+
+			aAdd(aItensSD3,aItemSD3)
+
+			lMsErroAuto := .F.
+
+			MSExecAuto({|x,y,z| MATA241(x,y,z)},aCabecSD3,aItensSD3,3)
+		End Sequence
+
+		If lMsErroAuto
+			cError := getError()
+			addLogs(cError)
+			// FWAlertError("Baixa do empenho não realizada.", "Baixa Empenho")
+			ShowLog("Baixa do empenho não realizada."+CRLF+cError)
+			lContinua := .F.
+		EndIf
+	Else
+		FWAlertError("Lote Bobina: "+(cAliasTela)->C5_ZLOTCTL+" inválido.", "Baixa Empenho")
+		lContinua := .F.
+	EndIf
+
+	RestArea(aArea)
+
+Return lContinua
+
+/*
+	Grava os dados no qualidade
+*/
+Static Function gravaQualidade()
+	Local aLibera			:= {}	as array
+	Local nAprovaReprova	:= IIF((cAlias)->Z4_APROV1 == "A", 1, 2)	as integer
+	Local cChave			:= ""	as character
+	Local cAliasQP7			:= ""	as character
+	Local cQuery			:= ""	as character
+	Local nLaco				:= 0	as integer
+	Local cAprovaReprova	:= IIF((cAlias)->Z4_APROV1 == "A", "A", "E")	as character
+	Local cSitOP			:= IIF((cAlias)->Z4_APROV1 == "A", "2", "3")	as character
+	Local cDescricaoAprova	:= ""	as character
+	Local lAprovado			:= .F.	as logical
+	Local cMVQIPEST			:= SuperGetMV("MV_QIPEST",.F.,"0") as character
+	Local aMov				:= {} as array
+	Local aCM				:= {} as array
+	Local cLocalRejeitado	:= GetMvNNR("MV_CQREJEI","97") as character
+
+	DbSelectArea( 'SA1' )
+	SA1->(DbSetOrder(3))
+	SA1->(DbSeek(xFilial("SA1")+(cAliasTela)->A1_CGC))
+
+	DbSelectArea("QPL") //Laudo da OP
+	QPL->(dbSetOrder(1)) // QPL_FILIAL,QPL_OP,QPL_OPERAC,QPL_LABOR
+	For nLaco := 1 To 2
+
+		If !QPL->(DbSeek(FwxFilial("QPL")+(cAliasTela)->TMP_ORDEM+(cAliasTela)->H8_OPER+"LABFIS"))
+
+			RecLock("QPL", .T.)
+			QPL->QPL_FILIAL	:= xFilial("QPL")
+			QPL->QPL_PRODUT	:= (cAliasTela)->C2_PRODUTO
+			QPL->QPL_DTENTR	:= StoD((cAlias)->Z4_DATA)
+			QPL->QPL_LOTE	:= SH6->H6_LOTECTL
+			QPL->QPL_DTENLA	:= StoD((cAlias)->Z4_DATA)
+			QPL->QPL_HRENLA	:= (cAlias)->Z4_HORARIO
+			QPL->QPL_LAUDO	:= cAprovaReprova
+			QPL->QPL_DTLAUD	:= StoD((cAlias)->Z4_DATA)
+			QPL->QPL_HRLAUD	:= (cAlias)->Z4_HORARIO
+			QPL->QPL_TAMLOT	:= AllTrim(Str(SH6->H6_QTDPROD))
+			QPL->QPL_OP		:= (cAliasTela)->TMP_ORDEM
+			QPL->QPL_ROTEIR	:= (cAliasTela)->C2_ROTEIRO
+
+			If cAprovaReprova == "E"
+				QPL->QPL_QTREJ	:= AllTrim(Str(SH6->H6_QTDPROD))
+			EndIf
+
+			If nLaco == 1
+				QPL->QPL_LABOR	:= "LABFIS"
+				QPL->QPL_OPERAC	:= (cAliasTela)->H8_OPER
+			ElseIf nLaco == 2
+				QPL->QPL_DTVAL	:= SH6->H6_DTVALID
+			EndIf
+
+			QPL->(MsUnlock())
+		EndIf
+	Next nLaco
+
+	cQuery := 	queryBuscarLimitesMedicoes()
+	MPSysOpenQuery( cQuery, cAliasQP7 := GetNextAlias() )
+
+	DbSelectArea("QAA") // Ensaiadores
+	DbSelectArea("QPR") // Medicoes
+	(cAliasQP7)->(DbGoTop())
+	While (cAliasQP7)->(!EoF())
+		cChave	:= QA_SXESXF("QPR","QPR_CHAVE",,4)
+		ConfirmSX8()
+
+		RecLock("QPR", .T.)
+		QPR->QPR_FILIAL	:= xFilial("QPR")
+		QPR->QPR_OP		:= (cAliasTela)->TMP_ORDEM
+		QPR->QPR_PRODUT	:= (cAliasTela)->C2_PRODUTO
+		QPR->QPR_DTENTR	:= StoD((cAlias)->Z4_DATA)
+		QPR->QPR_LOTE	:= SH6->H6_LOTECTL
+		QPR->QPR_REVI	:= (cAliasQP7)->QP7_REVI
+		QPR->QPR_LABOR	:= "LABFIS"
+		QPR->QPR_ENSAIO	:= (cAliasQP7)->QP7_ENSAIO
+		QPR->QPR_DTMEDI	:= StoD((cAlias)->Z4_DATA)
+		QPR->QPR_HRMEDI	:= (cAlias)->Z4_HORARIO
+		QPR->QPR_AMOSTR	:= 1
+		//QPR->QPR_RESULT	:= (cAlias)->Z4_APROV1
+		QPR->QPR_OPERAC	:= (cAliasTela)->H8_OPER
+		QPR->QPR_CHAVE	:= cChave
+		QPR->QPR_CLIENT	:= SA1->A1_COD
+		QPR->QPR_LOJA	:= SA1->A1_LOJA
+		QPR->QPR_FILMAT	:= xFilial("QPR")
+		QPR->QPR_ROTEIR	:= (cAliasTela)->C2_ROTEIRO
+		QPR->QPR_ENSR	:= QP215Ens()
+		QPR->(MsUnlock())
+
+		RecLock("QPT", .T.)
+		QPT->QPT_FILIAL	:= xFilial("QPT")
+		QPT->QPT_CODMED	:= cChave
+		QPT->(MsUnlock())
+
+		If AllTrim((cAliasQP7)->QP1_DESCPO) == "ASPECTO VISUAL"
+			RecLock("QPQ", .T.)
+			QPQ->QPQ_FILIAL	:= xFilial("QPQ")
+			QPQ->QPQ_CODMED	:= cChave
+			QPQ->QPQ_MEDICA	:= (cAlias)->Z4_ASPVISU
+			QPQ->(MsUnlock())
+
+			RecLock("QPR", .F.)
+			QPR->QPR_RESULT	:= IIF((cAlias)->Z4_ASPVISU == "N", "R", "A")
+			QPR->(MsUnlock())
+		Else
+			RecLock("QPS", .T.)
+			QPS->QPS_FILIAL	:= xFilial("QPS")
+			QPS->QPS_CODMED	:= cChave
+			//QPS->QPS_INDMED	:= cAprovaReprova
+
+			If AllTrim((cAliasQP7)->QP1_DESCPO) == "ESPESSURA"
+				lAprovado	:= compararMedicao((cAlias)->Z4_ESPESSU, cEspessuraLIE, cEspessuraLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:=  space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_ESPESSU )))+alltrim((cAlias)->Z4_ESPESSU )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "REBARBA"
+				lAprovado	:= compararMedicao((cAlias)->Z4_REBARBA, cRebarbaLIE, cRebarbaLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:=space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_REBARBA )))+alltrim((cAlias)->Z4_REBARBA )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "LARGURA"
+				lAprovado	:= compararMedicao((cAlias)->Z4_LARGURA, cLarguraLIE, cLarguraLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:=space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_LARGURA )))+alltrim((cAlias)->Z4_LARGURA )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "FOLGA DE FACAS"
+				lAprovado	:= compararMedicao((cAlias)->Z4_FOLGA, cFolgaLIE, cFolgaLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:= space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_FOLGA )))+alltrim((cAlias)->Z4_FOLGA )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "CAMBER"
+				lAprovado	:= compararMedicao((cAlias)->Z4_CAMBER, cCamberLIE, cCamberLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:= space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_CAMBER )))+alltrim((cAlias)->Z4_CAMBER )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "DIAMETRO INTERNO"
+				lAprovado	:= compararMedicao((cAlias)->Z4_DIAINT, cDiametroInternoLIE, cDiametroInternoLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:= space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_DIAINT )))+alltrim((cAlias)->Z4_DIAINT )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "DIAMETRO EXTERNO"
+				lAprovado	:= compararMedicao((cAlias)->Z4_DIAEXT, cDiametroExternoLIE, cDiametroExternoLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:= space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_DIAEXT )))+alltrim((cAlias)->Z4_DIAEXT )
+			ElseIf AllTrim((cAliasQP7)->QP1_DESCPO) == "DIFERENCA X E Y"
+				lAprovado	:= compararMedicao((cAlias)->Z4_DIFEIXO, cDiferencaEixoLIE, cDiferencaEixoLSE)
+
+				QPS->QPS_INDMED	:= IIF(lAprovado, "A", "E")
+				QPS->QPS_MEDICA	:=  space(TamSx3("QPS_MEDICA")[1]  - len(alltrim((cAlias)->Z4_DIFEIXO )))+alltrim((cAlias)->Z4_DIFEIXO )
+			EndIf
+
+			QPS->(MsUnlock())
+
+			RecLock("QPR", .F.)
+			QPR->QPR_RESULT	:= IIF(lAprovado, "A", "R")
+			QPR->(MsUnlock())
+		EndIf
+
+		(cAliasQP7)->(DbSkip())
+	EndDo
+	(cAliasQP7)->(DbCloseArea())
+
+	DbSelectArea("QPD")
+	QPD->(DbSeek(xFilial("QPD")+cAprovaReprova))
+	cDescricaoAprova	:= QPD->QPD_DESCPO
+
+	DbSelectArea("QPM") //Especificoes da Operacoes
+	RecLock("QPM", .T.)
+	QPM->QPM_FILIAL	:= xFilial("QPM")
+	QPM->QPM_PRODUT	:= (cAliasTela)->C2_PRODUTO
+	QPM->QPM_DTPROD	:= StoD((cAlias)->Z4_DATA)
+	QPM->QPM_LOTE	:= SH6->H6_LOTECTL
+	QPM->QPM_DTENLA	:= StoD((cAlias)->Z4_DATA)
+	QPM->QPM_HRENLA	:= (cAlias)->Z4_HORARIO
+	QPM->QPM_LAUDO	:= cAprovaReprova
+	QPM->QPM_DESLAU	:= cDescricaoAprova
+	QPM->QPM_DTLAUD	:= StoD((cAlias)->Z4_DATA)
+	QPM->QPM_HRLAUD	:= (cAlias)->Z4_HORARIO
+	QPM->QPM_DTVAL	:= SH6->H6_DTVALID
+	QPM->QPM_TAMLOT	:= AllTrim(Str(SH6->H6_QTDPROD))
+	QPM->QPM_OP		:= (cAliasTela)->TMP_ORDEM
+	QPM->QPM_OPERAC	:= (cAliasTela)->H8_OPER
+	QPM->QPM_ROTEIR	:= SC2->C2_ROTEIRO
+	QPM->(MsUnlock())
+
+	DbSelectArea("QPK")
+	If QPK->(DbSeek(xFilial("QPK")+AvKey((cAliasTela)->TMP_ORDEM,"QPK_OP")+SH6->H6_LOTECTL))
+		RecLock("QPK", .F.)
+		//QPK->QPK_CHAVE	:= cChave
+		QPK->QPK_LAUDO	:= cAprovaReprova
+		QPK->QPK_CERQUA	:= QA_SEQUSX6("QIP_CEQU",TamSX3("C2_CERQUA")[1],"S","Certificado Qualidade")
+		QPK->QPK_CLIENT	:= SA1->A1_COD
+		QPK->QPK_LOJA	:= SA1->A1_LOJA
+		QPK->QPK_SITOP	:= cSitOP
+		QPK->(MsUnlock())
+	Else
+		FWAlertError("Registro do qualidade não encontrado (QPK).", "Qualidade")
+		// DisarmTransaction()
+		lContinua := .F.
+	EndIf
+	DbSelectArea("SD3")
+	SD3->(DbSetOrder(14))
+	If SD3->(DbSeek(xFilial("SD3")+SH6->H6_PRODUTO+SH6->H6_IDENT))
+		DbSelectArea("SD7")
+		SD7->(DbSetOrder(3))
+		If SD7->(DbSeek(xFilial("SD7")+SH6->H6_PRODUTO+SD3->D3_NUMSEQ))
+
+			If cMVQIPEST == "0"
+
+				Begin Sequence
+					aAdd(aLibera,	{;
+						{"D7_TIPO"		,	nAprovaReprova			,	NIL},;
+						{"D7_DATA"		,	Date()					,	NIL},;
+						{"D7_QTDE"		,	SH6->H6_QTDPROD			,	NIL},;
+						{"D7_OBS"		,	""						,	NIL},;
+						{"D7_QTSEGUM"	,	NIL						,	NIL},;
+						{"D7_MOTREJE"	,	""						,	NIL},;
+						{"D7_LOCDEST"	,	IIF(nAprovaReprova == 2, cLocalRejeitado, (cAliasTela)->C2_LOCAL)	,	NIL},;
+						{"D7_LOCALIZ"	,	(cAliasTela)->A1_CGC	,	NIL},;
+						{"D7_SALDO"		,	NIL						,	NIL},;
+						{"D7_SALDO2"	,	NIL						,	NIL},;
+						{"D7_ESTORNO"	,	NIL						,	NIL}})
+
+					lMsErroAuto := .F.
+
+					MSExecAuto({|x, y, z| MATA175(x, y)},aLibera, 4)
+				End Sequence
+
+				If lMsErroAuto
+					cError := getError()
+					addLogs(cError)
+					FWAlertError("Liberacao do qualidade não realizado.", "Qualidade")
+					//DisarmTransaction()
+					lContinua := .F.
+				EndIf
+			Else
+
+				SD7->(DbSetORder(2))
+				If SD7->D7_TIPO == 0
+
+					Aadd(aMov,Array(11))
+					aMov[Len(aMov),01] := nAprovaReprova            //Tipo da Movimentacao (1=libera/2=Rejeita)
+					aMov[Len(aMov),02] := SH6->H6_QTDPROD	   		//Quantidade a ser movimentada
+					aMov[Len(aMov),03] := IIF(nAprovaReprova == 2, cLocalRejeitado, (cAliasTela)->C2_LOCAL) 	// Local de Destino da Movimentacao
+					aMov[Len(aMov),04] := date()   					//Data da Movimentacao
+					aMov[Len(aMov),05] := ""              			//X = Estornado
+					aMov[Len(aMov),06] := ""              			//Motivo da Rejeicao
+					aMov[Len(aMov),07] := ""      					//Observacao
+					aMov[Len(aMov),08] := nil						//Quantidade na 2a Unidade de Medida
+					aMov[Len(aMov),09] := ""						//Endereco
+					aMov[Len(aMov),10] := " " 			   			//Numero de Serie
+					aMov[Len(aMov),11] := " " 			   			//Servico
+					aCM := {0,0,0,0,0}
+					fGravaCQ(SD7->D7_PRODUTO,SD7->D7_NUMERO,.F.,aMov,aCM)
+				Else
+					FWAlertError("Item não é do tipo 0 na (SD7).", "Qualidade")
+					//DisarmTransaction()
+					lContinua := .F.
+				EndIf
+			EndIf
+		Else
+			FWAlertError("Item não identificado para liberação do CQ (SD7).", "Qualidade")
+			//DisarmTransaction()
+			lContinua := .F.
+		EndIf
+	Else
+		FWAlertError("Movimentação de produção/estoque não encontrada (SD3).", "PCP")
+		//DisarmTransaction()
+		lContinua := .F.
+	EndIf
+Return lContinua
+
+/*
+	Endereçar Saldo do Apontamento
+*/
+Static Function enderecarApontamento()
+	DbSelectArea("SD3")
+	SD3->(DbSetOrder(14))
+	If SD3->(DbSeek(xFilial("SD3")+SH6->H6_PRODUTO+SH6->H6_IDENT))
+		lContinua := enderecarItens()
+	Else
+		FWAlertError("Movimentação de produção/estoque não encontrada (SD3).", "PCP")
+		// DisarmTransaction()
+		lContinua := .F.
+	EndIf
+Return lContinua
+
+/*
+	Endereçar Saldo do Qualidade
+*/
+Static Function enderecarQualidade()
+	DbSelectArea("SD3")
+	SD3->(DbSetOrder(9))
+	If SD3->(DbSeek(xFilial("SD3")+AvKey(SD7->D7_NUMERO,"D3_DOC")+AvKey("", "D3_ITEM")+"DE4"))
+		lContinua := enderecarItens()
+	Else
+		FWAlertError("Movimentação de liberação do CQ não encontrada (SD3).", "Qualidade")
+		// DisarmTransaction()
+		lContinua := .F.
+	EndIf
+Return lContinua
+
+/*
+	Endereçar Itens
+*/
+Static Function enderecarItens()
+	Local aCabecalhoSDA	:= {}	as array
+	Local aItemSDB		:= {}	as array
+	Local aItensSDB		:= {}	as array
+	Local aArea			:= GetArea()	as array
+
+	DbSelectArea("SDA")
+	SDA->(DbSetOrder(1))
+
+	SDA->(DbGoTop()) // Posiciona o cabeçalho
+	If SDA->(DbSeek(xFilial("SDA") + SD3->D3_COD + SD3->D3_LOCAL + SD3->D3_NUMSEQ))
+		If SDA->DA_SALDO > 0
+			aAdd(aCabecalhoSDA	, {"DA_PRODUTO", SDA->DA_PRODUTO	, Nil})
+			aAdd(aCabecalhoSDA	, {"DA_NUMSEQ" , SDA->DA_NUMSEQ		, Nil})
+
+			aAdd(aItemSDB	, {"DB_ITEM"   , "0001"			, Nil})
+			aAdd(aItemSDB	, {"DB_ESTORNO", " "			, Nil})
+			aAdd(aItemSDB	, {"DB_LOCALIZ", (cAliasTela)->A1_CGC	, Nil})
+			aAdd(aItemSDB	, {"DB_DATA"   , Date()			, Nil})
+			aAdd(aItemSDB	, {"DB_QUANT"  , SDA->DA_SALDO	, Nil})
+
+			aAdd(aItensSDB, aItemSDB)
+
+			lMsErroAuto := .F.
+			MATA265(aCabecalhoSDA, aItensSDB, 3)
+
+			If lMsErroAuto
+				cError := getError()
+				addLogs(cError)
+				// FWAlertError("Endereçamento de saldo não realizado.", "Saldo")
+				// DisarmTransaction()
+				lContinua := .F.
+			EndIf
+		EndIf
+	Else
+		FWAlertError("Saldo a endereçar nao encontrado (SDA).", "Saldo")
+		// DisarmTransaction()
+		lContinua := .F.
+	EndIf
+
+	RestArea(aArea)
+Return lContinua
+
+/*
+	Rotina que recupera o Log da Rotina Automática, sem excluir o Log Padrão
+*/
+Static Function getError(cSeparador)
+	Local aAutoErro 	:= GetAutoGRLog()
+	Local cLog			:= ""
+	Local nLog			:= 1
+
+	Default cSeparador	:= CRLF
+
+	For nLog:=1 to Len(aAutoErro)
+		//If (nLog <= 2) .Or. ("Invalido" $ Alltrim(aAutoErro[nLog]))
+		cLog += Alltrim(aAutoErro[nLog]) + cSeparador
+		//EndIf
+
+		//Refaz a Gravação do Log de Erro
+		AutoGRLog( aAutoErro[nLog] )
+	Next nLog
+Return cLog
+
+/*
+	Tratamento de Logs para Rotina Automática e pela Interface com Solução
+*/
+Static Function addLogs(cLogs, cSolucao, lRet)
+	Local aSolucao 	:= {}
+
+	Default lRet	:= .F.
+
+	If !( lRet )
+		If !Empty(cSolucao)
+			aAdd( aSolucao , cSolucao )
+		EndIf
+
+		Help(,,"HELP",,cLogs,1,0, Nil, Nil, Nil, Nil, Nil, aSolucao )
+	EndIf
+Return
+
+
+/*
+	ajuste de empenho
+*/
+User Function Alt381Auto(cOP,cProduto,nQuant,nQtd2UM,cLote,cNumLt,cCgcCliente)
+
+	Local nX         := 0
+	Local aCab       := {}
+	Local aLine      := {}
+	Local aItens     := {}
+	Local nY
+	Local cOper      := ""
+
+	PRIVATE lMsErroAuto := .F.
+
+	cNewOrdemProducao := alltrim(cOP)
+	cOP  := substr(cNewOrdemProducao,1,len(cNewOrdemProducao)-3)+'001'
+
+
+	//Monta o cabeçalho com o número da OP que será alterada.
+	//Necessário utilizar o índice 2 para efetuar a alteração.
+	aCab := {{"D4_OP",cOP,NIL},;
+		{"INDEX",2,Nil}}
+
+	//Seta o índice da SDC
+	SDC->(dbSetOrder(2))
+
+	//Busca os empenhos da SD4 para alterar/excluir.
+	SD4->(dbSetOrder(2))
+	SD4->(dbSeek(xFilial("SD4")+cOP ))
+
+	While SD4->(!Eof()) .And. Alltrim(SD4->(D4_FILIAL+D4_OP)) == xFilial("SD4")+cOP
+
+		If SD4->D4_COD == cProduto .And. (Empty(SD4->D4_LOTECTL) .Or. (SD4->(D4_LOTECTL+D4_NUMLOTE) == cLote+cNumLt))
+
+			cOper := SD4->D4_OPERAC
+
+			//Adiciona as informações do empenho, conforme estão na tabela SD4.
+			aLine := {}
+			For nX := 1 To SD4->(FCount())
+				aAdd(aLine,{SD4->(Field(nX)),SD4->(FieldGet(nX)),Nil})
+			Next nX
+
+			//Adiciona o identificador LINPOS para identificar que o registro já existe na SD4
+			aAdd(aLine,{"LINPOS","D4_COD+D4_TRT+D4_LOTECTL+D4_NUMLOTE+D4_LOCAL+D4_OPORIG+D4_SEQ",;
+				SD4->D4_COD,;
+				SD4->D4_TRT,;
+				SD4->D4_LOTECTL,;
+				SD4->D4_NUMLOTE,;
+				SD4->D4_LOCAL,;
+				SD4->D4_OPORIG,;
+				SD4->D4_SEQ})
+
+			//Altera a quantidade do empenho do produto "9617-MP1"
+			//Busca a informação da quantidade (D4_QTDEORI) no array aLine.
+			nX := aScan(aLine,{|x| x[1] == "D4_QTDEORI"})
+			If nX > 0 .and. Empty(SD4->D4_LOTECTL)
+				//Encontrou o valor da quantidade. Faz a alteração do valor.
+				// If lForca
+				//   aLine[nX,2] := nQuant
+				//  SD4->(RecLock("SD4",.F.))
+				// SD4->D4_XXQTORI := SD4->D4_QTDEORI
+				// SD4->(MsUnLock("SD4"))
+				//Else
+					If aLine[nX,2] < nQuant
+						aLine[nX,2]	:= 0
+					Else
+						aLine[nX,2]	-= nQuant
+					EndIf
+				// EndIf
+			EndIf
+
+			//Altera também o saldo do empenho
+			nX := aScan(aLine,{|x| x[1] == "D4_QUANT"})
+			If nX > 0 .and. Empty(SD4->D4_LOTECTL)
+				//Encontrou o valor da quantidade. Faz a alteração do valor.
+				//   If lForca
+				//       aLine[nX,2] := nQuant
+				///       SD4->(RecLock("SD4",.F.))
+				//      SD4->D4_XXSLORI := SD4->D4_QUANT
+				//      SD4->(MsUnLock("SD4"))
+				// Else
+					If aLine[nX,2] < nQuant
+						aLine[nX,2]	:= 0
+					Else
+						aLine[nX,2]	-= nQuant
+					EndIf
+				// EndIf
+			EndIf
+
+			//Altera também a segunda UM
+			nX := aScan(aLine,{|x| x[1] == "D4_QTSEGUM"})
+			If nX > 0
+				//Encontrou o valor da quantidade. Faz a alteração do valor.
+				//  If lForca
+				//      aLine[nX,2] := nQtd2UM
+				// Else
+				//  aLine[nX,2] -= nQtd2UM
+				// EndIf
+			EndIf
+
+
+			/////////////////////////
+			/////////////////////////
+			If SDC->(dbSeek(xFilial("SDC")+SD4->(D4_COD+D4_LOCAL+D4_OP+D4_TRT+D4_LOTECTL+D4_NUMLOTE)))
+				//Inicializa o array aEnder
+				aEnder     := {}
+
+				//Busca os registros da tabela SDC
+				While SDC->(!Eof()) .And. ;
+						xFilial("SDC")+SD4->(D4_COD+D4_LOCAL+D4_OP+D4_TRT+D4_LOTECTL+D4_NUMLOTE) == ;
+						SDC->(DC_FILIAL+DC_PRODUTO+DC_LOCAL+DC_OP+DC_TRT+DC_LOTECTL+DC_NUMLOTE)
+
+					//Inicializa o array aLineEnder
+					aLineEnder := {}
+
+					//Carrega as informações da tabela SDC no array aLineEnder
+					For nX := 1 To SDC->(FCount())
+						aAdd(aLineEnder,{SDC->(Field(nX)),SDC->(FieldGet(nX)),Nil})
+					Next nX
+
+					//Adiciona o identificador LINPOS para identificar que o registro já existe na tabela SDC
+					aAdd(aLineEnder,{"LINPOS","DC_LOCALIZ+DC_NUMSERI",;
+						SDC->DC_LOCALIZ,;
+						SDC->DC_NUMSERI})
+
+
+
+					//Adiciona o endereço no array de endereços.
+					aAdd(aEnder,aLineEnder)
+
+					//Próximo registro da SDC
+					SDC->(dbSkip())
+				EndDo
+				//Adiciona um novo endereço para ser incluído na tabela SDC.
+				//Inicializa o array aLineEnder
+				//aLineEnder := {}
+
+				//Adiciona as informações do novo endereço.
+				//aAdd(aLineEnder,{"DC_LOCALIZ","END03",Nil})
+				//aAdd(aLineEnder,{"DC_QUANT"  ,2      ,Nil})
+
+				//Adiciona o novo endereço no array de endereços.
+				//aAdd(aEnder,aLineEnder)
+
+				//Adiciona as informações de alteração de endereço no array do Empenho.
+				aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+			EndIf
+			/////////////////////////
+			/////////////////////////
+
+			//Adiciona as informações do empenho no array de itens.
+			aAdd(aItens,aLine)
+
+		EndIf
+
+		//Próximo registro da SD4.
+		SD4->(dbSkip())
+	EndDo
+
+	DBSELECTAREA("SB1") //cProduto, cLote, cCgcCliente
+	DBSETORDER(1)
+	DBSEEK(XFILIAL("SB1")+cProduto)
+	aLine := {}
+	aadd(aLine , {"D4_OP"     , cOP, NIL})
+	aadd(aLine , {"D4_COD"    , cProduto         , NIL})
+	aadd(aLine , {"D4_LOCAL"  , SB1->B1_LOCPAD   , NIL})
+	aadd(aLine , {"D4_DATA"   , DATE()           , NIL})
+	aadd(aLine , {"D4_QTDEORI", nQuant             , NIL})
+	aadd(aLine , {"D4_QUANT"  , nQuant             , NIL})
+	aadd(aLine , {"D4_TRT"    , " "              , NIL})
+	aadd(aLine , {"D4_ROTEIRO", "01"             , NIL})
+	aadd(aLine , {"D4_LOTECTL", cLote            , NIL})
+	aadd(aLine , {"D4_NUMLOTE", cLote            , NIL})
+
+	//aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+
+	//Informações do endereço
+	aEnder     := {}
+	aLineEnder := {}
+	aAdd(aLineEnder,{"DC_LOCALIZ"   ,cCgcCliente      ,Nil})
+	aAdd(aLineEnder,{"DC_QUANT"     ,nQuant    ,Nil})
+	aAdd(aLineEnder,{"DC_QTSEGUM"   ,0   ,Nil})
+	aAdd(aLineEnder,{"DC_NUMSERI"   , '' ,Nil})
+
+	//Primeiro endereço que será utilizado
+	aAdd(aEnder,aLineEnder)
+
+	//Adiciona os endereços na linha do empenho
+	aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+	//Adiciona a linha do empenho no array de itens.
+	aAdd(aItens,aLine)
+
+
+
+
+
+	//Executa o MATA381, com a operação de Alteração.
+	MSExecAuto({|x,y,z| mata381(x,y,z)},aCab,aItens,4)
+
+	cDetalhe := ""
+
+	If lMsErroAuto
+		//Se ocorrer erro.
+		MostraErro()
+
+		aLog := GETAUTOGRLOG()
+
+		For nY := 1 to Len(aLog)
+			cDetalhe += aLog[nY]+CHR(10)
+		Next nY
+		Conout(cDetalhe)
+
+	Else
+		Conout("Alterado com sucesso.")
+	EndIf
+
+Return( !lMsErroAuto  )
+
+/*/
+User Function alt381Auto(cNewOrdemProducao, cProduto, cLote, cCgcCliente,nqtd)
+
+	Local aCab       := {}
+	Local aLine      := {}
+	Local aItens     := {}
+	Local aEnder     := {}
+	Local aLineEnder := {}
+	Local nX         := 0
+
+	DBSelectArea('SD4')
+	DBSelectArea('SDC')
+	SDC->(dbSetOrder(2))
+	SD4->(dbSetOrder(2))
+	cNewOrdemProducao := alltrim(cNewOrdemProducao)
+	coP001  := substr(cNewOrdemProducao,1,len(cNewOrdemProducao)-3)+'001'
+
+	SD4->(dbSeek(xFilial("SD4")+coP001))
+	While SD4->(!Eof()) .And. alltrim(SD4->(D4_FILIAL+D4_OP)) == FwxFilial("SD4")+coP001
+
+		aLine := {}
+		IF !EMPTY(SD4->D4_OPORIG)
+
+			For nX := 1 To SD4->(FCount())
+				If !(RTrim(SD4->(Field(nX))) $ "D4_DTVALID")
+					IF (RTrim(SD4->(Field(nX))) $ "D4_QUANT") .or. (RTrim(SD4->(Field(nX))) $ "D4_QTDEORI")
+						aAdd(aLine,{SD4->(Field(nX)),SD4->(FieldGet(nX))-nqtd,Nil})
+					ELSE
+						aAdd(aLine,{SD4->(Field(nX)),SD4->(FieldGet(nX)),Nil})
+					EndIf
+				ENDIF
+			next nx
+		ELSE
+			For nX := 1 To SD4->(FCount())
+				If !(RTrim(SD4->(Field(nX))) $ "D4_DTVALID")
+					aAdd(aLine,{SD4->(Field(nX)),SD4->(FieldGet(nX)),Nil})
+				EndIf
+			Next nX
+		ENDIF
+
+		//Adiciona o identificador LINPOS para identificar que o registro já existe na SD4
+		aAdd(aLine,{"LINPOS","D4_COD+D4_TRT+D4_LOTECTL+D4_NUMLOTE+D4_LOCAL+D4_OPORIG+D4_SEQ",;
+			SD4->D4_COD,;
+			SD4->D4_TRT,;
+			SD4->D4_LOTECTL,;
+			SD4->D4_NUMLOTE,;
+			SD4->D4_LOCAL,;
+			SD4->D4_OPORIG,;
+			SD4->D4_SEQ})
+
+/*/
+If AllTrim(SD4->D4_COD) == Alltrim(cProduto) .and. empty(SD4->D4_OPORIG)
+
+	If SDC->(dbSeek(xFilial("SDC")+SD4->(D4_COD+D4_LOCAL+D4_OP+D4_TRT+D4_LOTECTL+D4_NUMLOTE)))
+
+		aEnder     := {}
+		aLineEnder := {}
+
+		For nX := 1 To SDC->(FCount())
+			aAdd(aLineEnder,{SDC->(Field(nX)),SDC->(FieldGet(nX)),Nil})
+		Next nX
+
+		aAdd(aLineEnder,{"LINPOS","DC_LOCALIZ+DC_NUMSERI",;
+			SDC->DC_LOCALIZ,;
+			SDC->DC_NUMSERI})
+
+		If !(Alltrim(SDC->DC_LOCALIZ) == Alltrim(cCgcCliente))
+
+			nX := aScan(aLineEnder,{|x| x[1] == "DC_LOCALIZ"})
+			If nX > 0
+				aLineEnder[nX,2] := AvKey(cCgcCliente, "DC_LOCALIZ")
+			EndIf
+		EndIf
+		aAdd(aEnder,aLineEnder)
+	Else
+		aLineEnder := {}
+		aAdd(aLineEnder,{"DC_LOCALIZ"   ,AvKey(cCgcCliente, "DC_LOCALIZ")      ,Nil})
+		aAdd(aLineEnder,{"DC_QUANT"     ,SD4->D4_QUANT    ,Nil})
+		aAdd(aLineEnder,{"DC_QTSEGUM"   ,0   ,Nil})
+		aAdd(aLineEnder,{"DC_NUMSERI"   , '' ,Nil})
+
+
+
+
+		//aAdd(aLineEnder,{"DC_LOCALIZ",AvKey(cCgcCliente, "DC_LOCALIZ"),Nil})
+		//aAdd(aLineEnder,{"DC_QUANT"  ,SD4->D4_QUANT      ,Nil})
+
+		aAdd(aEnder,aLineEnder)
+
+	EndIf
+
+	aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+
+EndIf
+/*/
+		aAdd(aItens,aLine)
+		SD4->(dbSkip())
+
+	EndDo
+
+	if len(aItens)>0
+
+
+
+		DBSELECTAREA("SB1") //cProduto, cLote, cCgcCliente
+		DBSETORDER(1)
+		if  DBSEEK(XFILIAL("SB1")+cProduto)
+			aCab := {{"D4_OP",coP001,NIL},;
+				{"INDEX",2,Nil}}
+
+			//aCab   := FwVetByDic( aCab , "SD4" , .F. )
+
+
+			aLine := {}
+			aadd(aLine , {"D4_OP"     , coP001, NIL})
+			aadd(aLine , {"D4_COD"    , cProduto         , NIL})
+			aadd(aLine , {"D4_LOCAL"  , SB1->B1_LOCPAD   , NIL})
+			aadd(aLine , {"D4_DATA"   , DATE()           , NIL})
+			aadd(aLine , {"D4_QTDEORI", nqtd             , NIL})
+			aadd(aLine , {"D4_QUANT"  , nqtd             , NIL})
+			aadd(aLine , {"D4_TRT"    , " "              , NIL})
+			aadd(aLine , {"D4_ROTEIRO", "01"             , NIL})
+			aadd(aLine , {"D4_LOTECTL", cLote            , NIL})
+			//aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+
+			//Informações do endereço
+			aEnder     := {}
+			aLineEnder := {}
+			aAdd(aLineEnder,{"DC_LOCALIZ"   ,cCgcCliente      ,Nil})
+			aAdd(aLineEnder,{"DC_QUANT"     ,nqtd    ,Nil})
+			aAdd(aLineEnder,{"DC_QTSEGUM"   ,0   ,Nil})
+			aAdd(aLineEnder,{"DC_NUMSERI"   , '' ,Nil})
+
+			//Primeiro endereço que será utilizado
+			aAdd(aEnder,aLineEnder)
+
+			//Adiciona os endereços na linha do empenho
+			aAdd(aLine,{"AUT_D4_END",aEnder,Nil})
+			//Adiciona a linha do empenho no array de itens.
+			aAdd(aItens,aLine)
+
+
+		endif
+
+		//aItens := FwVetByDic( aItens , "SD4" , .T. )
+
+		lMsErroAuto:=.f.
+		MSExecAuto({|x,y,z| u_mata382(x,y,z)},aCab,aItens,4)
+
+		If lMsErroAuto
+			cError := getError()
+			addLogs(cError)
+			FWAlertError("Erro no ajuste de empenho", "alt381Auto")
+			lAjustouEmpenho := .F.
+
+		Else
+			lAjustouEmpenho := .T.
+		EndIf
+		lMsErroAuto:=.f.
+
+	EndIf
+
+Return lAjustouEmpenho

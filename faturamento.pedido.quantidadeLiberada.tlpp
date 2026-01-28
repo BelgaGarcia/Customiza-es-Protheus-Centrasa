@@ -1,0 +1,131 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.pedido
+
+/*/{Protheus.doc} quantidadeLiberada
+
+Altera quantidade liberada do item.
+
+@type Function
+@author Gabriel Goncalves
+@since 27/10/2025
+@version P12
+@database Oracle
+
+/*/
+User Function quantidadeLiberada(nQuantidadeLiberada)
+	Local lLiberacao	:= IsInCallStack("U_MT440LIB")	as logical
+
+	Private xRetorno
+
+	Default nQuantidadeLiberada	:= 0
+
+	If lLiberacao
+		xRetorno	:= nQuantidadeLiberada
+
+		quantidadeLiberadaRetorno()
+	Else
+		xRetorno	:= .T.
+
+		gatilhoQuantidadeLiberada()
+	EndIf
+Return xRetorno
+
+/*
+	Gatilho da quantidade liberada do item
+*/
+Static Function gatilhoQuantidadeLiberada()
+	Local cCampo		:= ReadVar()
+	Local nPosQTDVEN	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDVEN"})	as integer
+	Local nPosQTDLIB	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDLIB"})	as integer
+
+	If cCampo == "M->C6_ZLIBFAT"
+		If M->C6_ZLIBFAT == "S"
+			aCols[n][nPosQTDLIB]	:= aCols[n][nPosQTDVEN]
+		ElseIf M->C6_ZLIBFAT == "N"
+			aCols[n][nPosQTDLIB]	:= 0
+		EndIf
+	EndIf
+
+	atualizaQuantidadeLiberadaRetorno()
+Return
+
+/*
+	Atualiza quantidade liberada de retorno
+*/
+Static Function atualizaQuantidadeLiberadaRetorno()
+	Local nPosItemRetorno	:= 0	as integer
+	Local nPosItem			:= 0	as integer
+	Local nQuantidadeTotal	:= 0	as numeric
+	Local nPesoTotal		:= 0	as numeric
+	Local cTESRetorno		:= AllTrim(GetNewPar("FS_TESRET", ""))
+	Local cTESFaturamento	:= AllTrim(GetNewPar("FS_TESFAT", ""))
+	Local nPosUM			:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_UM"})	as integer
+	Local nPosTES			:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_TES"})	as integer
+	Local nPosZPESO			:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ZPESO"})	as integer
+	Local nPosQTDLIB		:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDLIB"})	as integer
+
+	For nPosItem := 1 To Len(aCols)
+		If aCols[nPosItem][nPosTES] $ cTESRetorno
+			nPosItemRetorno	:= nPosItem
+		ElseIf aCols[nPosItem][nPosTES] $ cTESFaturamento .And. aCols[nPosItem][nPosQTDLIB] > 0 .And. !aCols[nPosItem][Len(aCols[nPosItem])]
+			nQuantidadeTotal	+= aCols[nPosItem][nPosQTDLIB]
+			nPesoTotal			+= aCols[nPosItem][nPosZPESO]
+		EndIf
+	Next nPosItem
+
+	If nPosItemRetorno > 0
+		aCols[nPosItemRetorno][nPosQTDLIB]	:= IIF(aCols[nPosItemRetorno][nPosUM] == "KG", nPesoTotal, nQuantidadeTotal)
+	EndIf
+Return
+
+/*
+	Calcula quantidade liberada do item de retorno
+*/
+Static Function quantidadeLiberadaRetorno()
+	Local cTESRetorno	:= AllTrim(GetNewPar("FS_TESRET", ""))
+	Local cQuery		:= ""	as character
+	Local cAlias
+
+	If SC6->C6_TES $ cTESRetorno .And. !(SC6->C6_QTDLIB > 0)
+		cQuery := 	queryQuantidadeLiberadaRetorno()
+
+		MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+		(cAlias)->(DbGoTop())
+		If (cAlias)->(!EoF())
+			xRetorno	:= (cAlias)->QTDLIB
+		EndIf
+
+		(cAlias)->(DbCloseArea())
+	EndIf
+Return
+
+/*
+	Query da Quantidade Liberada de Retorno
+*/
+Static Function queryQuantidadeLiberadaRetorno()
+	Local cQuery			:= ""	as character
+	Local cTESFaturamento	:= FormatIn(AllTrim(GetNewPar("FS_TESFAT", "")), ",")
+
+	cQuery += " SELECT " + CRLF
+
+	If SC6->C6_UM == "KG"
+		cQuery += "        SUM(C6_ZPESO) AS QTDLIB "	+ CRLF
+	Else
+		cQuery += "        SUM(C6_QTDVEN) AS QTDLIB "	+ CRLF
+	EndIf
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC5") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 		AND C6_NUM  = '"+SC6->C6_NUM+"' " + CRLF
+	cQuery += " 		AND C6_TES  IN "+cTESFaturamento+" " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+Return cQuery

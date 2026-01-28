@@ -1,0 +1,593 @@
+#include "totvs.ch"
+
+namespace estoques.nf
+
+/*/ {Protheus.doc} importarTerceiros
+
+Importar arquivo CSV para gerar nota fiscal de remessa Beneficiamento dos clientes
+
+@type function
+@author Rodolfo Carvalho - DSM
+@since 16/07/2024
+@version P12
+@database ORACLE
+
+@obs
+CSV teste:
+{"F1_TIPO","F1_DOC","F1_SERIE","A1_CGC","F1_FORNECE","F1_LOJA","F1_EMISSAO","F1_ESPECIE","F1_COND","F1_CHVNFE","D1_COD","D1_QUANT","D1_VUNIT","D1_TOTAL","D1_OPER","D1_TES", "D1_LOCAL","D1_LOTEFOR","D1_LOTECTL"}
+
+/*/
+User Function importarTerceiros()
+
+	Local oProcess      := nil as object
+	Local cDirIni       := ""  as character
+	Local cTipArq       := ""  as character
+	Local cTitulo       := ""  as character
+	Local lSalvar       := .F. as logical
+
+	Private cArquivoCsv := ""  as character
+	Private oFileCSV    := Nil as object
+	Private cAliasCab   := ""  as character
+	Private cAliasItem  := ""  as character
+	Private aRegArquivo := {}  as array
+	Private aCamposCab  := {}  as array
+	Private aCamposItem := {}  as array
+	Private cMsgAlerta  := ""  as character
+	Private aTipoCampo  := {}  as array
+	Private aErroLog    := {}  as array
+	Private cCodCli     := ""  as character
+	Private cLojCli     := ""  as character
+
+	cDirIni 	:= "C:\"
+	cTipArq 	:= "Arquivos com separações (*.csv)"
+	cTitulo 	:= "Seleção de Arquivos para Importação"
+	cMsgAlerta	:= "Importacao Beneficiamento"
+
+	cArquivoCsv := tFileDialog(cTipArq,cTitulo,,cDirIni,lSalvar,)
+
+	oProcess	:=	MsNewProcess():New( { |lEnd| processarArquivoCSV(@oProcess) },"Gerando importação Arquivo","Executando...",.t.)
+	oProcess:Activate()
+
+	If ( Len(aErroLog) > 0 )
+		errosLogs()
+	EndIf
+
+Return
+
+/*/
+	Gerar importacao do arquivo
+/*/
+Static Function processarArquivoCSV(oProcess)
+	oProcess:SetRegua1(6)
+	oProcess:IncRegua1( "Processando o arquivo CSV" )
+
+	If !( validarArquivo(@oProcess))
+		Return .F.
+	Endif
+
+	if !( geraTabelaTMP(@oProcess) )
+		Return .F.
+	Endif
+
+	aCabArquivo	 := Separa(aRegArquivo[1],";",.T.)
+
+	If !( validaCabecalhoCSV(@oProcess) )
+		Return .F.
+	Endif
+
+	If !( gravaNotaArquivoTmp(@oProcess) )
+		Return .F.
+	Endif
+
+
+	If !( geraDocumentoEntrada(@oProcess) )
+		Return .F.
+	Endif
+
+	oProcess:IncRegua1( "Step 04: Fim" )
+
+Return
+
+/*/
+	Validacao do arquivo CSV
+/*/
+Static Function validarArquivo(oProcess)
+	Local lRet  			:= .T.		as logical
+
+	oProcess:SetRegua2(2)
+	oProcess:IncRegua2("Inicio - Vaidando arquivo CSV")
+
+	if !File(cArquivoCsv)  //Verificar se arquivo existe
+		MsgAlert("Arquivo não encontado!",cMsgAlerta)
+		Return .f.
+	endif
+
+	oFileCSV := FwFileReader():New(cArquivoCsv)
+	If !(oFileCSV:Open())
+		MsgAlert("Não possivel abrir o arquivo",cMsgAlerta)
+		Return .f.
+	Else
+		aRegArquivo := oFileCSV:getAllLines()
+	endif
+
+	If Len(aRegArquivo) == 0
+		MsgAlert("Nenhum registro foi encontrado no arquivo",cMsgAlerta)
+		Return  .F.
+	Endif
+
+	oProcess:IncRegua2("Fim - Vaidando arquivo CSV")
+
+Return lRet
+
+/*/
+	Gerar tabela TMP
+/*/
+Static Function geraTabelaTMP(oProcess)
+
+	Local aFields			:= {}		as array
+	Local oTableCab		  	:= Nil		as object
+	Local oTableItem	  	:= Nil		as object
+	Local aTamanhoX3 		:= {}		as array
+	Local cError			:= ""		as character
+	Local bError			:= {|| }	as codeblock
+	Local lRet				:= .T.		as logical
+	Local nReg				:= 0		as numeric
+
+	oProcess:SetRegua2(2)
+	oProcess:IncRegua2("Inicio - Criando tabela temporária")
+
+	aCamposCab 	:= {"F1_TIPO","F1_DOC","F1_SERIE", "F1_FORNECE","F1_LOJA","A1_CGC","F1_EMISSAO","F1_ESPECIE","F1_CHVNFE"}
+	aCamposItem	:= {"D1_ITEM","D1_COD","D1_LOCAL","D1_QUANT","D1_VUNIT","D1_LOTEFOR","D1_LOTECTL","F1_ESPECIE","D1_ZNFUSIN", "D1_OPER"}
+
+	cAliasCab	:= GetNextAlias()
+	cAliasItem	:= GetNextAlias()
+
+
+	Begin Sequence
+
+		lRet		:= .T.
+		cError 		:= ""
+		bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+		oTableCab	:= FWTemporaryTable():New( cAliasCab )
+
+		aFields		:= {}
+
+		For nReg := 1 To Len(aCamposCab)
+			aTamanhoX3	:= FWTamSX3(aCamposCab[nReg])
+			aadd(aFields   , {aCamposCab[nReg], aTamanhoX3[3], aTamanhoX3[1], aTamanhoX3[2]})
+			aadd(aTipoCampo, {aCamposCab[nReg], aTamanhoX3[3]})
+		Next
+
+		oTableCab:SetFields( aFields )
+		oTableCab:AddIndex("01", {"F1_CHVNFE"})
+		oTableCab:Create()
+
+		oTableItem	:= FWTemporaryTable():New( cAliasItem )
+
+		aFields		:= {}
+
+		For nReg := 1 To Len(aCamposItem)
+			aTamanhoX3	:= FWTamSX3(aCamposItem[nReg])
+			aAdd(aFields,{aCamposItem[nReg]	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+			Aadd(aTipoCampo,{aCamposItem[nReg],aTamanhoX3[3]})
+		Next
+
+		aTamanhoX3	:= FWTamSX3("F1_CHVNFE")
+		aAdd(aFields,{"D1_CHVNFE"	, aTamanhoX3[3] ,aTamanhoX3[1]	,aTamanhoX3[2] })
+
+		oTableItem:SetFields( aFields )
+		oTableItem:AddIndex("01", {"D1_CHVNFE"})
+		oTableItem:Create()
+
+	End Sequence
+
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		cMsgProcesso := "Falha criar tabela temporaria." + CRLF + cError
+		lRet := .F.
+		MsgAlert(cMsgProcesso, cMsgAlerta)
+	Endif
+
+	oProcess:IncRegua2("Fim - Criando tabela temporária")
+
+Return lRet
+
+/*/
+	Valida cabecalho do arquivo CSV
+/*/
+Static Function validaCabecalhoCSV(oProcess)
+	Local nRecord        := 0   as numeric
+	Local nPos           := 0   as numeric
+	Local lRet           := .T. as logical
+	Local aCamposArquivo := {}  as array
+
+	oProcess:SetRegua2(2)
+	oProcess:IncRegua2("Inicio - Validando informações do cabeçalho")
+
+	aCamposArquivo := {"F1_TIPO","F1_DOC","F1_SERIE","A1_CGC","F1_EMISSAO","F1_ESPECIE","F1_CHVNFE","D1_LOCAL","D1_COD",;
+		"D1_QUANT","D1_VUNIT","D1_LOTEFOR","D1_LOTECTL", "D1_ZNFUSIN", "D1_OPER"}
+
+
+	For nRecord := 1 To Len(aCamposArquivo)
+		If ( nPos := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposArquivo[nRecord]})) == 0
+			MsgAlert("Campo '"+aCamposArquivo[nRecord]+"' não foi encontrado no arquivo.", cMsgAlerta)
+			lRet := .F.
+			Exit
+		Endif
+	Next
+
+	oProcess:IncRegua2("Fim - Validando informações do cabeçalho")
+
+Return lRet
+
+/*/
+	Grava registros do arquivo tabela TMP
+/*/
+Static Function gravaNotaArquivoTmp(oProcess)
+
+	Local lRet          := .T.  as logical
+	Local nRecord       := 0    as numeric
+	Local nRecordPed    := 0    as numeric
+	Local nPosCampo     := 0    as numeric
+	Local nPosTipoCampo := 0    as numeric
+	Local nPosProduto   := 0    as numeric
+	Local aDadosArquivo := {}   as array
+
+	Local nPosChvNfe    := 0    as numeric
+	Local cChvNfe       := ""   as character
+	Local cTabelaPreco  := ""   as character
+
+	Local cError        := ""   as character
+	Local bError        := {|| } as codeblock
+	Local xValorCampo   := Nil
+
+	oProcess:IncRegua1( "Step 02: Preparando dados do arquivo: TAB Temp" )
+
+	Begin Sequence
+
+		lRet		:= .T.
+		cError 		:= ""
+		bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+		nPosChvNfe  := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "F1_CHVNFE" })
+		nPosCliente := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "F1_FORNECE" })
+		nPosLojaCli := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "F1_LOJA" })
+		nPosProduto := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "D1_COD" })
+		nPosCGC     := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "A1_CGC" })
+		nPosEspecie := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == "F1_ESPECIE" })
+
+		dbSelectArea(cAliasCab)
+		oProcess:SetRegua2(Len(aRegArquivo))
+		For nRecord := 2 To Len(aRegArquivo)
+
+			aDadosArquivo 	:= Separa(aRegArquivo[nRecord],";",.T.)
+			Aadd(aDadosArquivo,"")
+
+			DbSelectArea("SA1")
+
+			If !Empty(aDadosArquivo[nPosCGC])
+				SA1->(dbSetOrder(1))
+				SA1->(DbSeek(FwxFilial("SA1")+AvKey(aDadosArquivo[nPosCGC],"A1_CGC")))
+				cCodCli := SA1->A1_COD
+				cLojCli := SA1->A1_LOJA
+			EndIf
+
+			cTabelaPreco := SA1->A1_TABELA
+			cChvNfe	:= aDadosArquivo[nPosChvNfe]
+			oProcess:IncRegua2("NFE: "+Alltrim(cChvNfe))
+
+			// CABECALHO
+			If !( (cAliasCab)->(dbSeek(cChvNfe)) )
+				RecLock(cAliasCab, .T.)
+				nItemSd1 := 0
+
+				For nRecordPed := 1 To Len(aCamposCab)
+					nPosCampo     := aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposCab[nRecordPed] })
+					nPosTipoCampo := aScan(aTipoCampo, { |x| Upper(Alltrim(x[1])) == aCamposCab[nRecordPed] })
+
+					If nPosCampo == 0
+						xValorCampo := ""
+					Else
+						xValorCampo := aDadosArquivo[nPosCampo]
+					EndIf
+
+					If (aCamposCab[nRecordPed] == "F1_FORNECE")
+						xValorCampo := cCodCli
+					EndIf
+
+					If (aCamposCab[nRecordPed] == "F1_LOJA")
+						xValorCampo := cLojCli
+					EndIf
+
+					If aTipoCampo[nPosTipoCampo,2] == "N"
+						&("(cAliasCab)->"+aCamposCab[nRecordPed]) := Val(xValorCampo)
+					ElseIf aTipoCampo[nPosTipoCampo,2] == "D"
+						&("(cAliasCab)->"+aCamposCab[nRecordPed]) := CTOD(xValorCampo)
+					Else
+						&("(cAliasCab)->"+aCamposCab[nRecordPed]) := xValorCampo
+					EndIf
+
+				Next
+
+				(cAliasCab)->( MsUnLock())
+
+			EndIf
+
+			// ITEMS
+			RecLock(cAliasItem, .T.)
+			nRecordPed := 0
+
+			(cAliasItem)->D1_CHVNFE := cChvNfe
+			For nRecordPed := 1 To Len(aCamposItem)
+				nItemSd1++
+
+				nPosCampo 		:= aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposItem[nRecordPed] })
+				nPosTipoCampo 	:= aScan(aTipoCampo, { |x|  Upper(Alltrim(x[1])) == aCamposItem[nRecordPed] })
+
+				If nPosCampo == 0
+					xValorCampo := ""
+				Else
+					xValorCampo := aDadosArquivo[nPosCampo]
+				EndIf
+
+				If (aCamposItem[nRecordPed] == "D1_PRCVEN") .And. ( Val(xValorCampo) == 0)
+
+					If ( Val(xValorCampo) == 0 )
+						If !Empty(cTabelaPreco)
+							xValorCampo := MaTabPrVen(cTabelaPreco, aDadosArquivo[nPosProduto], aDadosArquivo[nPosQtdVen], aDadosArquivo[nPosCliente],aDadosArquivo[nPosLojaCli],1,DDATABASE)
+						EndIf
+					EndIf
+
+					If ( Val(xValorCampo) == 0 )
+						xValorCampo := "1"
+					EndIf
+
+				EndIf
+
+				If (aCamposItem[nRecordPed] == "F1_ESPECIE")
+					xValorCampo := aDadosArquivo[nPosEspecie]
+				EndIf
+
+				If (aCamposItem[nRecordPed] == "D1_ITEM")
+					&("(cAliasItem)->"+aCamposItem[nRecordPed]) := Strzero(nItemSd1,4)
+				Else
+					If aTipoCampo[nPosTipoCampo,2] == "N"
+						&("(cAliasItem)->"+aCamposItem[nRecordPed]) := Val(Strtran(xValorCampo,",","."))
+					ElseIf aTipoCampo[nPosTipoCampo,2] == "D"
+						&("(cAliasItem)->"+aCamposItem[nRecordPed]) := CTOD(xValorCampo)
+					Else
+						&("(cAliasItem)->"+aCamposItem[nRecordPed]) := xValorCampo
+					EndIf
+				EndIf
+
+			Next
+
+			(cAliasItem)->( MsUnLock())
+		Next
+
+	End Sequence
+
+	ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		cMsgProcesso := "Falha criar gravar registros na tabela temporaria." + CRLF + cError
+		lRet := .F.
+		MsgAlert(cMsgProcesso, cMsgAlerta)
+	Endif
+
+Return lRet
+
+/*/
+	Gera Documento de Entrada
+/*/
+Static Function geraDocumentoEntrada(oProcess)
+	Local lRet      := .T. as logical
+	Local cMsg      := ""  as character
+	Local nTotalRec := 0   as numeric
+
+	oProcess:IncRegua1( "Step 03: Gravando Notas" )
+
+	dbSelectArea(cAliasCab)
+	nTotalRec := (cAliasCab)->(RecCount())
+	(cAliasCab)->(dbGotop())
+
+	oProcess:SetRegua2(nTotalRec)
+
+	While !( (cAliasCab)->(eof()) )
+
+		// Begin Transaction
+		oProcess:IncRegua2("NFE: "+Alltrim((cAliasCab)->F1_CHVNFE))
+
+		lRet := gravaDocumentoEntrada(@oProcess)
+
+		If ( lRet == .F. )
+			// DisarmTransaction()
+		Else
+			cMsg := "Documento de Entrada gerada com sucesso"
+			Aadd(aErroLog,{1,cMsg,"Geração Documento de Entrada ",cCodCli,cLojCli,"NFE."+(cAliasCab)->F1_CHVNFE,""})
+		Endif
+
+		// End Transaction
+
+		(cAliasCab)->(dbSkip())
+	Enddo
+
+Return lRet
+
+/*/
+	Grava Documento de Entrada
+/*/
+Static Function gravaDocumentoEntrada(oProcess)
+	Local lRet				:= .T.		as logical
+	Local aAutoCab			:= {}		as array
+	Local aAutoItens		:= {}		as array
+	Local cError			:= ""		as character
+	// Local bError			:= {|| }	as codeblock
+
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .F.
+	Private lAutoErrNoFile := .F.
+
+	SetModulo("SIGAEST","EST")
+
+	oProcess:IncRegua2("Vaidando dados digitados DOc. Entrada")
+
+	// Begin Sequence
+
+	lRet		:= .T.
+	cError 		:= ""
+	// bError 		:= ErrorBlock({|oError| getErrorBlock(oError,@cError) } )
+
+	aAutoCab	:= getAutoCab()
+	aAutoItens 	:= getAutoItens()
+	If Len(aAutoItens) > 0
+		lMsErroAuto := .F.
+
+		MSExecAuto({|x,y,z,a| MATA103(x,y,z)},aAutoCab,aAutoItens,3)
+
+	Endif
+
+	// End Sequence
+
+	// ErrorBlock(bError)
+
+	If ( !Empty(cError) )
+		cMsgProcesso := "Erro ao gerar o Documento de Entrada." + CRLF + cError
+		lRet := .F.
+		Aadd(aErroLog,{3,"Geração Documento de Entrada",cMsgProcesso,cCodCli,cLojCli,"ID. "+(cAliasCab)->F1_CHVNFE})
+	Else
+		If ( lMsErroAuto )
+			cMsg := "Erro ao Documento de Entrada"+CRLF
+			cMsg += Mostraerro()
+			lRet := .F.
+			Aadd(aErroLog,{3,cMsg,"Geração Documento de Entrada",cCodCli,cLojCli,"ID. "+(cAliasCab)->F1_CHVNFE})
+		Else
+			lRet := .T.
+		EndIf
+	Endif
+
+	SetModulo("SIGA"+cModulo,cModulo)
+
+Return lRet
+
+/*
+	Monta o Cabeçalho da Rotina Automática
+*/
+Static Function getAutoCab()
+	Local aAutoCab 		:= {}
+
+	aadd(aAutoCab, {"F1_DOC"    , (cAliasCab)->F1_DOC    , NIL})
+	aadd(aAutoCab, {"F1_SERIE"  , (cAliasCab)->F1_SERIE  , NIL})
+	aadd(aAutoCab, {"F1_FORNECE", (cAliasCab)->F1_FORNECE, NIL})
+	aadd(aAutoCab, {"F1_LOJA"   , (cAliasCab)->F1_LOJA   , NIL})
+	aadd(aAutoCab, {"F1_EMISSAO", (cAliasCab)->F1_EMISSAO, NIL})
+	aadd(aAutoCab, {"F1_DTDIGIT", DDATABASE              , NIL})
+	aadd(aAutoCab, {"F1_TIPO"   , (cAliasCab)->F1_TIPO   , NIL})
+	aadd(aAutoCab, {"F1_FORMUL" , "N"                    , NIL})
+
+	// aadd(aAutoCab, {"F1_ESPECIE", "SPED"                 , NIL})
+	aadd(aAutoCab, {"F1_ESPECIE", (cAliasCab)->F1_ESPECIE, NIL})
+
+	aadd(aAutoCab, {"F1_COND"   , "001"                  , NIL})
+	aadd(aAutoCab, {"F1_DESPESA", 0                      , Nil})
+	aadd(aAutoCab, {"F1_DESCONT", 0                      , Nil})
+	aadd(aAutoCab, {"F1_SEGURO" , 0                      , Nil})
+	aadd(aAutoCab, {"F1_FRETE"  , 0                      , Nil})
+	aadd(aAutoCab, {"F1_MOEDA"  , 1                      , Nil})
+	aadd(aAutoCab, {"F1_TXMOEDA", 1                      , Nil})
+	aadd(aAutoCab, {"F1_STATUS" , "A"                    , Nil})
+	aadd(aAutoCab, {"F1_VOLUME1", 0                      , Nil})
+	aadd(aAutoCab, {"F1_PLIQUI" , 0                      , Nil})
+	aadd(aAutoCab, {"F1_PBRUTO" , 0                      , Nil})
+	aadd(aAutoCab, {"F1_CHVNFE" , (cAliasCab)->F1_CHVNFE , Nil})
+
+Return aAutoCab
+
+/*
+	Recupera os Campos dos Itens da Rotina Automática
+*/
+Static Function getAutoItens()
+	Local aRecord    := {} as array
+	Local nItem      := 0  as numeric
+	Local aAutoItens := {} as array
+	// Local cOper3Fis  := Alltrim(SuperGetMV("ZV_D1OPER3", .F., "25"))
+	// Local cOper4Fis  := Alltrim(SuperGetMV("ZV_D1OPER4", .F., "59"))
+
+	dbSelectArea("SB1")
+	SB1->(dbSetOrder(1))
+
+	dbSelectArea(cAliasItem)
+	(cAliasItem)->(dbGotop())
+	(cAliasItem)->(dbSeek((cAliasCab)->F1_CHVNFE))
+	While ( !(cAliasItem)->(eof()) ) .And. ( (cAliasItem)->D1_CHVNFE == (cAliasCab)->F1_CHVNFE )
+
+		nItem++
+		aRecord	:= {}
+
+		cProd1 := PadR((cAliasItem)->D1_COD,TamSx3("D1_COD")[1])
+		SB1->(DbSeek(FwxFilial("SB1")+cProd1))
+
+		aadd(aRecord, {"D1_ITEM" , (cAliasItem)->D1_ITEM  , NIL})
+		aadd(aRecord, {"D1_COD"  , cProd1                 , NIL})
+		aadd(aRecord, {"D1_UM"   , SB1->B1_UM             , NIL})
+		aadd(aRecord, {"D1_QUANT", (cAliasItem)->D1_QUANT , NIL})
+		aadd(aRecord, {"D1_VUNIT", (cAliasItem)->D1_VUNIT , NIL})
+		aadd(aRecord, {"D1_TOTAL", ROUND((cAliasItem)->D1_QUANT * (cAliasItem)->D1_VUNIT,2)  , NIL})
+
+		If Alltrim((cAliasItem)->F1_ESPECIE) == "GER"
+			aadd(aRecord, {"D1_LOCAL", "ZZ"     , NIL})
+			// aadd(aRecord, {"D1_OPER", cOper4Fis, NIL})
+		Else
+			aadd(aRecord, {"D1_LOCAL", (cAliasItem)->D1_LOCAL, NIL})
+			// aadd(aRecord, {"D1_OPER", cOper3Fis, NIL})
+		EndIf
+
+		aadd(aRecord, {"D1_OPER" , (cAliasItem)->D1_OPER, NIL})
+		// aadd(aRecord, {"D1_TES" , "092", NIL})
+
+		If Alltrim(SB1->B1_RASTRO) == "L"
+			If !Empty((cAliasItem)->D1_LOTECTL)
+				aadd(aRecord, {"D1_LOTECTL", (cAliasItem)->D1_LOTECTL, NIL})
+				aadd(aRecord, {"D1_DTVALID", DDATABASE+800, NIL})
+				aadd(aRecord, {"D1_LOTEFOR", (cAliasItem)->D1_LOTEFOR, NIL})
+			EndIf
+		EndIf
+
+		If !Empty((cAliasItem)->D1_ZNFUSIN)
+			aadd(aRecord, {"D1_ZNFUSIN", (cAliasItem)->D1_ZNFUSIN, NIL})
+		EndIf
+
+		aAdd(aAutoItens,aRecord)
+		(cAliasItem)->(dbSkip())
+	Enddo
+
+Return aAutoItens
+
+/*/
+	Retornoar descricao do erro
+/*/
+Static Function getErrorBlock(oError,cErro)
+
+	cErro := oError:Description + oError:ErrorStack
+
+Return
+
+/*/
+	Mostra erro logs Grig
+/*/
+Static Function errosLogs()
+	Local aDadosCampos	:= {}	as array
+	Local cTitulo		:= ""	as character
+
+	cTitulo := "Imprtacao Saldo Terceiros"
+
+	aadd(aDadosCampos, {"TITERRO"   , "Erro"   , "C", 030, 00, ""})
+	aadd(aDadosCampos, {"F1_FORNECE", "Cliente", "C", 008, 00, ""})
+	aadd(aDadosCampos, {"F1_LOJA"   , "Loja"   , "C", 004, 00, ""})
+	aadd(aDadosCampos, {"F1_CHVNFE" , "NFE"    , "C", 020, 00, ""})
+
+	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
+
+Return
