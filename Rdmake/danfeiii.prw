@@ -68,6 +68,7 @@ Local cAliasChk		:= ""
 Local nQtdDocs		:= 0
 Local nLimitImp		:= 500 // Define o limite de DANFES a serem impressos em um lote
 Local nQtdTotal		:= 0
+Local lContinua		:= .T.
 
 Default lIsLoja	:= .F.	// indica se foi chamado de alguma rotina do SIGALOJA
 

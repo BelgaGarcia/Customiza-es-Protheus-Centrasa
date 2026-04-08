@@ -18,25 +18,31 @@ Relatorio de Notas de Saida
 User Function notasSaida()
 	Private aPerguntas			:= {}	as array
 	Private oReport				:= Nil	as object
-	Private cClienteDe			:= Space(8)	as character
-	Private cClienteAte			:= Space(8)	as character
+	Private cCNPJ				:= Space(14)	as character
 	Private dDataRecebimenteDe	:= StoD("")	as date
 	Private dDataRecebimenteAte	:= StoD("")	as date
-	Private cIDBobinaDe			:= Space(13)	as character
-	Private cIDBobinaAte		:= Space(13)	as character
-	Private cNotaFiscalDe		:= Space(9)	as character
-	Private cNotaFiscalAte		:= Space(9)	as character
-	Private cNotaEncoDe			:= Space(9)	as character
-	Private cNotaEncoAte		:= Space(9)	as character
-	Private cCFOPDe				:= Space(5)	as character
-	Private cCFOPAte			:= Space(5)	as character
-	Private cTipoProduto		:= Space(99)	as character
+	Private cIDBobina			:= Space(13)	as character
+	Private cNotaFiscal			:= Space(9)	as character
+	Private cNotaForCli			:= Space(9)	as character
+	Private cNotaEncomenda		:= Space(9)	as character
+	Private cNotaSaida			:= Space(9)	as character
+	Private dDataEmissaoDe		:= StoD("")	as date
+	Private dDataEmissaoAte		:= StoD("")	as date
+	Private cCFOPEntrada		:= Space(99)	as character
+	Private cCFOPSaida			:= Space(99)	as character
+	Private cTipoProdutoEntrada	:= Space(99)	as character
+	Private cTipoProdutoSaida	:= Space(99)	as character
 	Private cArmazemDe			:= Space(2)	as character
 	Private cArmazemAte			:= Space(2)	as character
 	Private nSaldoZerado		:= 1	as integer
 	Private cAliasEntrada		:= GetNextAlias()
 	Private cAliasSaida			:= GetNextAlias()
+	Private cAliasProducao		:= GetNextAlias()
 	Private cCFOPFaturamento	:= GetNewPar("FS_CFOPFAT", "")
+	Private lFiltraSaida		:= .F.	as logical
+	Private lNotaSaida			:= .F.	as logical
+	Private lProduzido			:= .F.	as logical
+	Private nQuantidadeAFaturar	:= 0
 
 	If criaPergunta()
 		ReportDef()
@@ -50,60 +56,76 @@ Return
 Static Function criaPergunta()
 	Local lRetorno	:= .F.	as logical
 	Local aPergunta	:= {}	as array
-	Local cLoadName	:= "FSFISR01"	as character
+	Local cLoadName	:= "FSFISR01B"	as character
 	Local aAnswers	:= {}	as array
 
-	aAdd(aPergunta, {1, "Cliente De", cClienteDe, "", "", "SA1", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "Cliente Até", cClienteAte, "", "", "SA1", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "CNPJ", cCNPJ, "", "", "ZCGCA1", ".T.", 80, .F.})
 	aAdd(aPergunta, {1, "Data Recebimento De", dDataRecebimenteDe, "", "", "", ".T.", 80, .T.})
 	aAdd(aPergunta, {1, "Data Recebimento Até", dDataRecebimenteAte, "", "", "", ".T.", 80, .T.})
-	aAdd(aPergunta, {1, "No. Prod. De (ID Bobina)", cIDBobinaDe, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "No. Prod. Até (ID Bobina)", cIDBobinaAte, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "No. NF De", cNotaFiscalDe, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "No. NF Até", cNotaFiscalAte, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "NF Enco De", cNotaEncoDe, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "NF Enco Até", cNotaEncoAte, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "CFOP De", cCFOPDe, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "CFOP Até", cCFOPAte, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "Tipo Produto", cTipoProduto, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "Armazem De", cArmazemDe, "", "", "", ".T.", 80, .F.})
-	aAdd(aPergunta, {1, "Armazem Até", cArmazemAte, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Produto (ID Bobina)", cIDBobina, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "NF Entrada", cNotaFiscal, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "NF For. Cli.", cNotaForCli, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "NF Enco", cNotaEncomenda, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "NF Saida", cNotaSaida, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Data Emissao De", dDataRecebimenteDe, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Data Emissao Até", dDataRecebimenteAte, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "CFOP Entrada", cCFOPEntrada, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "CFOP Saida", cCFOPSaida, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Tipo Produto Entrada", cTipoProdutoEntrada, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Tipo Produto Saida", cTipoProdutoSaida, "", "", "", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Armazem De", cArmazemDe, "", "", "NNR", ".T.", 80, .F.})
+	aAdd(aPergunta, {1, "Armazem Até", cArmazemAte, "", "", "NNR", ".T.", 80, .F.})
 	aAdd(aPergunta, {2, "Lista Produto com Saldo Zerado", nSaldoZerado, {"1=Sim", "2=Não"}, 80, ".T.", .F.})
 
 	If ParamBox(aPergunta, "Informe os parâmetros", @aAnswers, /*bOk*/, /*aButtons*/, /*lCentered*/, /*nPosx*/, /*nPosy*/, /*oDlgWizard*/, cLoadName, .T., .T.)
 		ParamSave(cLoadName, aAnswers, "1")
 		
-		cClienteDe			:= MV_PAR01
-		cClienteAte			:= MV_PAR02
-		dDataRecebimenteDe	:= MV_PAR03
-		dDataRecebimenteAte	:= MV_PAR04
-		cIDBobinaDe			:= MV_PAR05
-		cIDBobinaAte		:= MV_PAR06
-		cNotaFiscalDe		:= MV_PAR07
-		cNotaFiscalAte		:= MV_PAR08
-		cNotaEncoDe			:= MV_PAR09
-		cNotaEncoAte		:= MV_PAR10
-		cCFOPDe				:= MV_PAR11
-		cCFOPAte			:= MV_PAR12
-		cTipoProduto		:= AllTrim(MV_PAR13)
-		cArmazemDe			:= MV_PAR14
-		cArmazemAte			:= MV_PAR15
-		nSaldoZerado		:= Val(cValToChar(MV_PAR16))
+		cCNPJ				:= MV_PAR01
+		dDataRecebimenteDe	:= MV_PAR02
+		dDataRecebimenteAte	:= MV_PAR03
+		cIDBobina			:= MV_PAR04
+		cNotaFiscal			:= MV_PAR05
+		cNotaForCli			:= MV_PAR06
+		cNotaEncomenda		:= MV_PAR07
+		cNotaSaida			:= MV_PAR08
+		dDataEmissaoDe		:= MV_PAR09
+		dDataEmissaoAte		:= MV_PAR10
+		cCFOPEntrada		:= AllTrim(MV_PAR11)
+		cCFOPSaida			:= AllTrim(MV_PAR12)
+		cTipoProdutoEntrada	:= AllTrim(MV_PAR13)
+		cTipoProdutoSaida	:= AllTrim(MV_PAR14)
+		cArmazemDe			:= MV_PAR15
+		cArmazemAte			:= MV_PAR16
+		nSaldoZerado		:= Val(cValToChar(MV_PAR17))
 
 		lRetorno	:= .T.
+
+		verificaFiltroSaida()
 	EndIf
 Return lRetorno
+
+/*
+	Verifica filtro saida
+*/
+Static Function verificaFiltroSaida()
+	If !Empty(cNotaSaida) .Or. !Empty(dDataEmissaoAte) .Or. !Empty(cCFOPSaida) .Or. !Empty(cTipoProdutoSaida)
+		lFiltraSaida	:= .T.
+	EndIf
+Return
 
 /*
 	A funcao estatica ReportDef devera ser criada para todos os
 	relatorios que poderao ser agendados pelo usuario
 */
 Static Function ReportDef()
-	Local oCliente		:= Nil	as object
-	Local oProduto		:= Nil	as object
-	Local oNotasSaida	:= Nil	as object
-	Local oTotalPeso	:= Nil	as object
-	Local oTotalPeca	:= Nil	as object
+	Local oCliente				:= Nil	as object
+	Local oProduto				:= Nil	as object
+	Local oNotasSaida			:= Nil	as object
+	Local oProducao				:= Nil	as object
+	Local oTotalPeso			:= Nil	as object
+	Local oTotalPeca			:= Nil	as object
+	Local oTotalPesoProduzido	:= Nil	as object
+	Local oTotalPecaProduzido	:= Nil	as object
 
 	oReport	:= TReport():New("Relatório Notas de Saida - Operação Triangular", "Análise Notas de Saida",,{|oReport| ReportPrint(),})
 	oReport:SetLandscape() 
@@ -125,18 +147,19 @@ Static Function ReportDef()
 	oProduto:SetAutoSize(.T.)
 
 	TRCell():New(oProduto,"DT_RECEB"	,/*Tabela*/,"Dt. Receb."	,/*Picture*/,10,/*lPixel*/,{|| StoD((cAliasEntrada)->DT_RECEB)})
-	TRCell():New(oProduto,"D1_LOTECTL"	,/*Tabela*/,"No. Prod."		,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->D1_LOTECTL})
+	TRCell():New(oProduto,"D1_LOTECTL"	,/*Tabela*/,"No. Prod."		,/*Picture*/,10,/*lPixel*/,{|| (cAliasEntrada)->D1_LOTECTL})
 	TRCell():New(oProduto,"D1_DOC"		,/*Tabela*/,"No. NF."		,/*Picture*/,10,/*lPixel*/,{|| (cAliasEntrada)->D1_DOC})
-	TRCell():New(oProduto,"DH_DOC1"		,/*Tabela*/,"NF For.Cli."	,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->DH_DOC1})
-	TRCell():New(oProduto,"DH_DOC2"		,/*Tabela*/,"NF Enco."		,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->DH_DOC2})
+	TRCell():New(oProduto,"DH_DOC1"		,/*Tabela*/,"NF For.Cli."	,/*Picture*/,10,/*lPixel*/,{|| (cAliasEntrada)->DH_DOC1})
+	TRCell():New(oProduto,"DH_DOC2"		,/*Tabela*/,"NF Enco."		,/*Picture*/,10,/*lPixel*/,{|| (cAliasEntrada)->DH_DOC2})
 	TRCell():New(oProduto,"D1_CF"		,/*Tabela*/,"CFOP"			,/*Picture*/,04,/*lPixel*/,{|| (cAliasEntrada)->D1_CF})
 	TRCell():New(oProduto,"D1_EMISSAO"	,/*Tabela*/,"Dt. Emi."		,/*Picture*/,10,/*lPixel*/,{|| StoD((cAliasEntrada)->D1_EMISSAO)})
 	TRCell():New(oProduto,"B1_COD"		,/*Tabela*/,"Cod. Produto"	,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->B1_COD})
 	TRCell():New(oProduto,"B1_DESC"		,/*Tabela*/,"Produto"		,/*Picture*/,40,/*lPixel*/,{|| (cAliasEntrada)->B1_DESC})
-	TRCell():New(oProduto,"FOR_CLI"		,/*Tabela*/,"Fornec/Cliente",/*Picture*/,20,/*lPixel*/,{|| (cAliasEntrada)->FOR_CLI})
+	TRCell():New(oProduto,"FOR_CLI"		,/*Tabela*/,"Fornec/Cliente",/*Picture*/,15,/*lPixel*/,{|| (cAliasEntrada)->FOR_CLI})
 	TRCell():New(oProduto,"D1_VUNIT"	,/*Tabela*/,"V. Unit."		,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->D1_VUNIT})
 	TRCell():New(oProduto,"D1_QUANT"	,/*Tabela*/,"Peso Ent."		,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->D1_QUANT})
 	TRCell():New(oProduto,"B8_SALDO"	,/*Tabela*/,"Saldo"			,/*Picture*/,12,/*lPixel*/,{|| (cAliasEntrada)->B8_SALDO})
+	TRCell():New(oProduto,"AFATURAR"	,/*Tabela*/,"Qtd.Fat"		,/*Picture*/,12,/*lPixel*/,{|| nQuantidadeAFaturar})
 	TRCell():New(oProduto,"D1_LOCAL"	,/*Tabela*/,"Estoq."		,/*Picture*/,04,/*lPixel*/,{|| (cAliasEntrada)->D1_LOCAL})
 	TRCell():New(oProduto,"B6_ZDATRET"	,/*Tabela*/,"Dta Venc. 180"	,/*Picture*/,10,/*lPixel*/,{|| StoD((cAliasEntrada)->B6_ZDATRET)})
 
@@ -170,6 +193,23 @@ Static Function ReportDef()
 	// Totalizador por Cliente
 	oTotalPeso	:= TRFunction():New(oNotasSaida:Cell("C6_ZPESO"),/* cID */,"SUM",/*oBreak*/,/*cTitle*/,/*cPicture*/,/*uFormula*/,.T./*lEndSection*/,.T./*lEndReport*/,/*lEndPage*/,oNotasSaida, {|| AllTrim((cAliasSaida)->D2_CF) $ cCFOPFaturamento})
 	oTotalPeca	:= TRFunction():New(oNotasSaida:Cell("C6_QTDVEN"),/* cID */,"SUM",/*oBreak*/,/*cTitle*/,/*cPicture*/,/*uFormula*/,.T./*lEndSection*/,.T./*lEndReport*/,/*lEndPage*/,oNotasSaida, {|| AllTrim((cAliasSaida)->D2_CF) $ cCFOPFaturamento})
+
+	oProducao := TRSection():New(oProduto, "Itens Produzidos", {cAliasProducao}, /*{Array com as ordens do relatÃ³rio}*/, /*Campos do SX3*/,/*Campos do SIX*/)
+	oProducao:SetTotalInLine(.F.)
+	oProducao:SetAutoSize(.T.)
+
+	TRCell():New(oProducao,"C6_NUMOP"		,/*Tabela*/,"Ordem de Producao"	,/*Picture*/,10,/*lPixel*/,{|| (cAliasProducao)->C6_NUMOP})
+	TRCell():New(oProducao,"C6_LOTECTL"		,/*Tabela*/,"Lote Produzido"	,/*Picture*/,12,/*lPixel*/,{|| (cAliasProducao)->C6_LOTECTL})
+	TRCell():New(oProducao,"C6_ZPESO"		,/*Tabela*/,"Peso"				,/*Picture*/,12,/*lPixel*/,{|| (cAliasProducao)->C6_ZPESO})
+	TRCell():New(oProducao,"C6_QTDVEN"		,/*Tabela*/,"Peças"				,/*Picture*/,12,/*lPixel*/,{|| IIF((cAliasProducao)->B1_UM == "PC", (cAliasProducao)->C6_QTDVEN, 0)})
+
+	// Alinhamento a direita das colunas de valor
+	oProducao:Cell("C6_ZPESO"):SetHeaderAlign("RIGHT")
+	oProducao:Cell("C6_QTDVEN"):SetHeaderAlign("RIGHT")
+
+	// Totalizador por Cliente
+	oTotalPesoProduzido	:= TRFunction():New(oProducao:Cell("C6_ZPESO"),/* cID */,"SUM",/*oBreak*/,/*cTitle*/,/*cPicture*/,/*uFormula*/,.T./*lEndSection*/,.F./*lEndReport*/,/*lEndPage*/,oProducao)
+	oTotalPecaProduzido	:= TRFunction():New(oProducao:Cell("C6_QTDVEN"),/* cID */,"SUM",/*oBreak*/,/*cTitle*/,/*cPicture*/,/*uFormula*/,.T./*lEndSection*/,.F./*lEndReport*/,/*lEndPage*/,oProducao)
 Return
 
 /*
@@ -177,7 +217,6 @@ Return
 */
 Static Function ReportPrint()
 	Local cCliente		:= ""	as character
-	Local lNotaSaida	:= .F.	as logical
 
 	buscaDadosNotasEntrada()
 
@@ -187,41 +226,54 @@ Static Function ReportPrint()
 	While !(cAliasEntrada)->(EoF()) .And. !oReport:Cancel()
 		oReport:IncMeter()
 
-		If !(cCliente == ((cAliasEntrada)->A1_COD + (cAliasEntrada)->A1_LOJA))
-			If !Empty(cCliente)
-				oReport:Section(1):Section(1):Finish()
-				oReport:Section(1):Finish()
+		buscaDadosNotasSaida()
+		buscaDadosProduzido()
+
+		If !lFiltraSaida .Or. (lFiltraSaida .And. lNotaSaida)
+			If !(cCliente == ((cAliasEntrada)->A1_COD + (cAliasEntrada)->A1_LOJA))
+				If !Empty(cCliente)
+					oReport:Section(1):Section(1):Finish()
+					oReport:Section(1):Finish()
+				EndIf
+
+				oReport:Section(1):Init()
+				oReport:Section(1):PrintLine()
+				oReport:Section(1):Section(1):Init()
+
+				cCliente	:= (cAliasEntrada)->A1_COD + (cAliasEntrada)->A1_LOJA
 			EndIf
 
-			oReport:Section(1):Init()
-			oReport:Section(1):PrintLine()
-			oReport:Section(1):Section(1):Init()
+			oReport:Section(1):Section(1):PrintLine()
 
-			cCliente	:= (cAliasEntrada)->A1_COD + (cAliasEntrada)->A1_LOJA
-		EndIf
+			(cAliasSaida)->(DbGoTop())
+			While !(cAliasSaida)->(EoF()) .And. !oReport:Cancel()
+				oReport:Section(1):Section(1):Section(1):Init()
+				oReport:Section(1):Section(1):Section(1):PrintLine()
 
-		oReport:Section(1):Section(1):PrintLine()
+				(cAliasSaida)->(DbSkip())
+			EndDo
+			
+			If lNotaSaida
+				oReport:Section(1):Section(1):Section(1):SetTotalText("Total Item Saida:")
+				oReport:Section(1):Section(1):Section(1):Finish()
+			EndIf
 
-		buscaDadosNotasSaida()
+			(cAliasProducao)->(DbGoTop())
+			While !(cAliasProducao)->(EoF()) .And. !oReport:Cancel()
+				oReport:Section(1):Section(1):Section(2):Init()
+				oReport:Section(1):Section(1):Section(2):PrintLine()
 
-		(cAliasSaida)->(DbGoTop())
-		While !(cAliasSaida)->(EoF()) .And. !oReport:Cancel()
-			lNotaSaida	:= .T.
+				(cAliasProducao)->(DbSkip())
+			EndDo
 
-			oReport:Section(1):Section(1):Section(1):Init()
-			oReport:Section(1):Section(1):Section(1):PrintLine()
-
-			(cAliasSaida)->(DbSkip())
-		EndDo
-		
-		If lNotaSaida
-			oReport:Section(1):Section(1):Section(1):SetTotalText("Total Item:")
-			oReport:Section(1):Section(1):Section(1):Finish()
-
-			lNotaSaida	:= .F.
+			If lProduzido
+				oReport:Section(1):Section(1):Section(2):SetTotalText("Total Item Produzido:")
+				oReport:Section(1):Section(1):Section(2):Finish()
+			EndIf
 		EndIf
 
 		(cAliasSaida)->(DbCloseArea())
+		(cAliasProducao)->(DbCloseArea())
 
 		(cAliasEntrada)->(DbSkip())
 	EndDo
@@ -250,9 +302,10 @@ Static Function getQueryNotasEntrada()
 	Local cQuery		:= ""	as character
 	
 	cQuery := "	SELECT " + CRLF
-	cQuery += "			CASE WHEN SDH2.DH_DOC IS NULL THEN A2_COD ELSE SA14.A1_COD END AS A1_COD " + CRLF
-	cQuery += "			,CASE WHEN SDH2.DH_DOC IS NULL THEN A2_LOJA ELSE SA14.A1_LOJA END AS A1_LOJA " + CRLF
-	cQuery += "			,CASE WHEN SDH2.DH_DOC IS NULL THEN A2_NOME ELSE SA14.A1_NOME END AS A1_NOME " + CRLF
+	cQuery += "			CASE WHEN SA14.A1_COD IS NULL THEN A2_COD ELSE SA14.A1_COD END AS A1_COD " + CRLF
+	cQuery += "			,CASE WHEN SA14.A1_LOJA IS NULL THEN A2_LOJA ELSE SA14.A1_LOJA END AS A1_LOJA " + CRLF
+	cQuery += "			,CASE WHEN SA14.A1_NOME IS NULL THEN A2_NOME ELSE SA14.A1_NOME END AS A1_NOME " + CRLF
+	cQuery += "			,SD1.D1_LOTECTL " + CRLF
 	cQuery += "			,SD1.D1_EMISSAO AS DT_RECEB " + CRLF
 	cQuery += "			,B1_COD " + CRLF
 	cQuery += "			,SD1.D1_DOC " + CRLF
@@ -261,13 +314,12 @@ Static Function getQueryNotasEntrada()
 	cQuery += "			,SD1.D1_CF " + CRLF
 	cQuery += "			,CASE WHEN SDH2.DH_DOC IS NULL THEN SD1.D1_EMISSAO ELSE SD14.D1_EMISSAO END AS D1_EMISSAO " + CRLF
 	cQuery += "			,B1_DESC " + CRLF
-	cQuery += "			,CASE WHEN SDH2.DH_DOC IS NULL THEN A2_NOME ELSE SA1.A1_NOME END AS FOR_CLI " + CRLF
+	cQuery += "			,CASE WHEN SD1.D1_TIPO = 'N' THEN A2_NREDUZ ELSE SA1.A1_NREDUZ END AS FOR_CLI" + CRLF //A2_NOME ELSE SA1.A1_NOME END AS FOR_CLI " + CRLF
 	cQuery += "			,CASE WHEN SDH2.DH_DOC IS NULL THEN SD1.D1_VUNIT ELSE SD14.D1_VUNIT END AS D1_VUNIT " + CRLF
 	cQuery += "			,SD1.D1_QUANT " + CRLF
 	cQuery += "			,B8_SALDO " + CRLF
 	cQuery += "			,SD1.D1_LOCAL " + CRLF
 	cQuery += "			,CASE WHEN SDH2.DH_DOC IS NULL THEN SB61.B6_ZDATRET ELSE SB64.B6_ZDATRET END AS B6_ZDATRET " + CRLF
-	cQuery += "			,SD1.D1_LOTECTL " + CRLF
 
 	cQuery += "	FROM " + CRLF
 	cQuery += "		" + RetSQLName("SD1") + " SD1 " + CRLF
@@ -278,6 +330,27 @@ Static Function getQueryNotasEntrada()
 	cQuery += "			" + RetSqlFil("SB1") + CRLF
 	cQuery += "			AND B1_COD		= SD1.D1_COD " + CRLF
 	cQuery += "			AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += "	INNER JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SF4") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			" + RetSqlFil("SF4") + CRLF
+	cQuery += "			AND F4_CODIGO	= SD1.D1_TES " + CRLF
+	cQuery += "			AND F4_ESTOQUE	= 'S' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SF4") + CRLF
+
+	cQuery += "	LEFT JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SDB") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			DB_FILIAL		= SD1.D1_FILIAL " + CRLF
+	cQuery += "			AND DB_DOC		= SD1.D1_DOC " + CRLF
+	cQuery += "			AND DB_SERIE	= SD1.D1_SERIE " + CRLF
+	cQuery += "			AND DB_CLIFOR	= SD1.D1_FORNECE " + CRLF
+	cQuery += "			AND DB_LOJA		= SD1.D1_LOJA " + CRLF
+	cQuery += "			AND DB_PRODUTO	= SD1.D1_COD " + CRLF
+	cQuery += "			AND DB_LOTECTL	= SD1.D1_LOTECTL " + CRLF
+	cQuery += "			AND DB_ESTORNO	<> 'S' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SDB") + CRLF
 
 	cQuery += "	LEFT JOIN " + CRLF
 	cQuery += "		" + RetSQLTab("SA2") + CRLF
@@ -344,9 +417,8 @@ Static Function getQueryNotasEntrada()
 	cQuery += "		" + RetSQLName("SA1") + " SA14 " + CRLF
 	cQuery += "			ON" + CRLF
 	cQuery += "			SA14.A1_FILIAL		= '"+xFilial("SA1")+"' " + CRLF
-	cQuery += "			AND SD14.D1_FORNECE	= SA14.A1_COD " + CRLF
-	cQuery += "			AND SD14.D1_LOJA	= SA14.A1_LOJA " + CRLF
-	cQuery += "			AND " + RetSqlDel("SA1") + CRLF
+	cQuery += "			AND SA14.A1_CGC		= DB_LOCALIZ " + CRLF
+	cQuery += "			AND SA14.D_E_L_E_T_	= ' ' " + CRLF
 
 	cQuery += "	LEFT JOIN " + CRLF
 	cQuery += "		" + RetSQLName("SB6") + " SB64 " + CRLF
@@ -361,32 +433,40 @@ Static Function getQueryNotasEntrada()
 	cQuery += "			1 = 1 " + CRLF
 	cQuery += "			AND SD1.D1_FILIAL	= '"+xFilial("SD1")+"' " + CRLF
 
-	If !Empty(cClienteAte)
-		cQuery += "			AND SA14.A1_COD		BETWEEN '"+cClienteDe+"' AND '"+cClienteAte+"' " + CRLF
+	If !Empty(cCNPJ)
+		cQuery += "			AND SA14.A1_CGC		= '"+cCNPJ+"' " + CRLF
 	EndIf
 
 	If !Empty(dDataRecebimenteAte)
-		cQuery += "			AND SD1.D1_EMISSAO		BETWEEN '"+DtoS(dDataRecebimenteDe)+"' AND '"+DtoS(dDataRecebimenteAte)+"' " + CRLF
+		cQuery += "			AND SD1.D1_EMISSAO	BETWEEN '"+DtoS(dDataRecebimenteDe)+"' AND '"+DtoS(dDataRecebimenteAte)+"' " + CRLF
 	EndIf
 
-	If !Empty(cIDBobinaAte)
-		cQuery += "			AND SD1.D1_LOTECTL		BETWEEN '"+cIDBobinaDe+"' AND '"+cIDBobinaAte+"' " + CRLF
+	If !Empty(cIDBobina)
+		cQuery += "			AND SD1.D1_LOTECTL	= '"+cIDBobina+"' " + CRLF
 	EndIf
 
-	If !Empty(cNotaFiscalAte)
-		cQuery += "			AND SD1.D1_DOC		BETWEEN '"+cNotaFiscalDe+"' AND '"+cNotaFiscalAte+"' " + CRLF
+	If !Empty(cNotaFiscal)
+		cQuery += "			AND SD1.D1_DOC		= '"+cNotaFiscal+"' " + CRLF
+	EndIf
+
+	If !Empty(cNotaForCli)
+		cQuery += "			AND SDH1.DH_DOC		= '"+cNotaForCli+"' " + CRLF
 	EndIf
 	
-	If !Empty(cNotaEncoAte)
-		cQuery += "			AND SD14.D1_DOC		BETWEEN '"+cNotaEncoDe+"' AND '"+cNotaEncoAte+"' " + CRLF
+	If !Empty(cNotaEncomenda)
+		cQuery += "			AND SD14.D1_DOC		= '"+cNotaEncomenda+"' " + CRLF
 	EndIf
 
-	If !Empty(cTipoProduto)
-		cQuery += "			AND B1_TIPO		IN "+FormatIn(AllTrim(cTipoProduto), ",")+" " + CRLF
+	If !Empty(cCFOPEntrada)
+		cQuery += "			AND TRIM(SD1.D1_CF)	IN "+FormatIn(AllTrim(cCFOPEntrada), ",")+" " + CRLF
+	EndIf
+
+	If !Empty(cTipoProdutoEntrada)
+		cQuery += "			AND B1_TIPO			IN "+FormatIn(AllTrim(cTipoProdutoEntrada), ",")+" " + CRLF
 	EndIf
 
 	If !Empty(cArmazemAte)
-		cQuery += "			AND SD1.D1_LOCAL		BETWEEN '"+cArmazemDe+"' AND '"+cArmazemAte+"' " + CRLF
+		cQuery += "			AND SD1.D1_LOCAL	BETWEEN '"+cArmazemDe+"' AND '"+cArmazemAte+"' " + CRLF
 	EndIf
 
 	If nSaldoZerado == 2 //Sem saldo zerado
@@ -395,7 +475,7 @@ Static Function getQueryNotasEntrada()
 
 	cQuery += "			AND SD1.D_E_L_E_T_	= ' ' " + CRLF
 
-	cQuery += "	ORDER BY 1,2 " + CRLF
+	cQuery += "	ORDER BY 1, 2, 4 " + CRLF
 Return cQuery
 
 /*
@@ -407,6 +487,13 @@ Static Function buscaDadosNotasSaida()
 	cQuery	:= getQueryNotasSaida()
 
 	MPSysOpenQuery( cQuery, cAliasSaida )
+
+	(cAliasSaida)->(DbGoTop())
+	If !(cAliasSaida)->(EoF())
+		lNotaSaida	:= .T.
+	Else
+		lNotaSaida	:= .F.
+	EndIf
 Return
 
 /*
@@ -448,6 +535,10 @@ Static Function getQueryNotasSaida()
 	cQuery += "			AND B1_COD		= C6_PRODUTO " + CRLF
 	cQuery += "			AND " + RetSqlDel("SB1") + CRLF
 
+	If !Empty(cTipoProdutoSaida)
+		cQuery += "			AND B1_TIPO		IN "+FormatIn(AllTrim(cTipoProdutoSaida), ",")+" " + CRLF
+	EndIf
+
 	cQuery += "	INNER JOIN " + CRLF
 	cQuery += "		" + RetSQLTab("SD2") + CRLF
 	cQuery += "			ON" + CRLF
@@ -455,9 +546,17 @@ Static Function getQueryNotasSaida()
 	cQuery += "			AND D2_PEDIDO	= C6_NUM " + CRLF
 	cQuery += "			AND D2_ITEMPV	= C6_ITEM " + CRLF
 	cQuery += "			AND " + RetSqlDel("SD2") + CRLF
+
+	If !Empty(cNotaSaida)
+		cQuery += "			AND D2_DOC		= '"+cNotaSaida+"' " + CRLF
+	EndIf
 	
-	If !Empty(cCFOPAte)
-		cQuery += "			AND D2_CF		BETWEEN '"+cCFOPDe+"' AND '"+cCFOPAte+"' " + CRLF
+	If !Empty(dDataEmissaoAte)
+		cQuery += "			AND D2_EMISSAO		BETWEEN '"+DtoS(dDataEmissaoDe)+"' AND '"+DtoS(dDataEmissaoAte)+"' " + CRLF
+	EndIf
+	
+	If !Empty(cCFOPSaida)
+		cQuery += "			AND D2_CF		IN "+FormatIn(AllTrim(cCFOPSaida), ",")+" " + CRLF
 	EndIf
 
 	cQuery += "	WHERE " + CRLF
@@ -467,4 +566,71 @@ Static Function getQueryNotasSaida()
 	cQuery += "			AND " + RetSqlDel("SC5") + CRLF
 
 	cQuery += "	ORDER BY D2_DOC, D2_ITEM " + CRLF
+Return cQuery
+
+/*
+	Buscar dados das producoes
+*/
+Static Function buscaDadosProduzido()
+	Local cQuery	:= ""	as character
+
+	cQuery	:= getQueryProduzido()
+
+	MPSysOpenQuery( cQuery, cAliasProducao )
+
+	nQuantidadeAFaturar	:= 0
+
+	(cAliasProducao)->(DbGoTop())
+	If !(cAliasProducao)->(EoF())
+		lProduzido	:= .T.
+
+		While !(cAliasProducao)->(EoF())
+			nQuantidadeAFaturar	+= (cAliasProducao)->C6_ZPESO
+
+			(cAliasProducao)->(DbSkip())
+		EndDo
+	Else
+		lProduzido			:= .F.
+	EndIf
+Return
+
+/*
+	Monta a query para buscar os dados das producoes
+*/
+Static Function getQueryProduzido()
+	Local cQuery		:= ""	as character
+
+	cQuery := "	SELECT " + CRLF
+	cQuery += "			C6_NUMOP " + CRLF
+	cQuery += "			,C6_LOTECTL " + CRLF
+	cQuery += "			,C6_ZPESO " + CRLF
+	cQuery += "			,C6_QTDVEN " + CRLF
+	cQuery += "			,B1_UM " + CRLF
+
+	cQuery += "	FROM " + CRLF
+	cQuery += "		" + RetSQLTab("SC5") + CRLF
+
+	cQuery += "	INNER JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SC6") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			" + RetSqlFil("SC6") + CRLF
+	cQuery += "			AND C6_NUM		= C5_NUM " + CRLF
+	cQuery += "			AND C6_NUMOP	<> ' ' " + CRLF
+	cQuery += "			AND C6_NOTA		= ' ' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += "	INNER JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SB1") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			" + RetSqlFil("SB1") + CRLF
+	cQuery += "			AND B1_COD		= C6_PRODUTO " + CRLF
+	cQuery += "			AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += "	WHERE " + CRLF
+	cQuery += "			1 = 1 " + CRLF
+	cQuery += "			AND " + RetSqlFil("SC5") + CRLF
+	cQuery += "			AND C5_ZLOTCTL	= '"+(cAliasEntrada)->D1_LOTECTL+"' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SC5") + CRLF
+
+	cQuery += "	ORDER BY C6_NUMOP, C6_LOTECTL " + CRLF
 Return cQuery

@@ -33,8 +33,9 @@ Return
 	Busca os dados
 */
 Static Function buscaDados()
-	Local cQuery	:= ""	as character
-	Local cAlias	:= ""	as character
+	Local cQuery		:= ""	as character
+	Local cAlias		:= ""	as character
+	Local cTESRetorno	:= AllTrim(GetNewPar("FS_TESRET", ""))
 
 	If lInclusaoNota
 		cQuery := 	getQueryBuscaDados()
@@ -42,12 +43,17 @@ Static Function buscaDados()
 		MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
 
 		(cAlias)->(DbGoTop())
-		If (cAlias)->(!EoF())
-			nPesoLiquido	:= (cAlias)->PESOLIQ
-			nPesoBruto		:= (cAlias)->PESOBRUTO
-			nVolume1		:= (cAlias)->VOLUME1
-			cEspecie1		:= "AMARRADOS"
-		EndIf
+		While (cAlias)->(!EoF())
+			If !((cAlias)->C6_TES $ cTESRetorno)
+				nPesoLiquido	+= (cAlias)->C6_ZPESO
+				nPesoBruto		+= (cAlias)->C6_ZPESOBT
+				cEspecie1		:= "AMARRADOS"
+
+				nVolume1++
+			EndIf
+
+			(cAlias)->(DbSkip())
+		EndDo
 
 		(cAlias)->(DbCloseArea())
 	Else
@@ -65,9 +71,9 @@ Static Function getQueryBuscaDados()
 	Local cQuery	:= ""	as character
 
 	cQuery += " SELECT " + CRLF
-	cQuery += "        SUM(CASE WHEN C6_NFORI = ' ' THEN C6_ZPESO ELSE 0 END) AS PESOLIQ "	+ CRLF
-	cQuery += "        ,SUM(CASE WHEN C6_NFORI = ' ' THEN C6_ZPESOBT ELSE 0 END) AS PESOBRUTO "	+ CRLF
-	cQuery += "        ,COUNT(CASE WHEN C6_NFORI = ' ' THEN 1 END) AS VOLUME1 "	+ CRLF
+	cQuery += "        C6_ZPESO "	+ CRLF
+	cQuery += "        ,C6_ZPESOBT "	+ CRLF
+	cQuery += "        ,C6_TES "	+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SD2") + CRLF

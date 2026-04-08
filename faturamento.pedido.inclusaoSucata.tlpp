@@ -209,7 +209,7 @@ Static Function gerarAlteracaoPedido()
 	nLinha			:= oBrwSucata:NAT
 	nPosItem		:= GdFieldPos("C6_ITEM")
 	aTamanhoCampo	:= FWTamSX3("C6_ITEM")
-	cItem			:= Strzero((Val(aCols[Len(aCols),nPosItem])+1),aTamanhoCampo[1])
+	cItem			:= buscaProximoItem() //Strzero((Val(aCols[Len(aCols),nPosItem])+1),aTamanhoCampo[1])
 	aTamanhoCampo	:= FWTamSX3("C6_VALOR")
 	nTotalPedido	:= Round((nPrcSucata * nQtdSucata),aTamanhoCampo[2])
 
@@ -615,3 +615,42 @@ Static Function errosLogs()
 	lib.U_ShowLogGrid(cTitulo,aErroLog,aDadosCampos)
 
 Return
+
+/*
+	Busca proximo item do pedido
+*/
+Static Function buscaProximoItem()
+	Local cRetorno			:= "" as character
+	Local cQuery			:= "" as character
+	Local cAlias
+
+	cQuery	:= queryBuscaProximoItem()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	If (cAlias)->(!EoF())
+		cRetorno	:= Soma1((cAlias)->C6_ITEM)
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return cRetorno
+
+/*
+	Query para buscar o proximo numero de item do pedido
+*/
+Static Function queryBuscaProximoItem()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += " 	MAX(C6_ITEM) C6_ITEM" + CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += " 	" + RetSqlTab("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	1 = 1 " + CRLF
+	cQuery += " 	AND " + RetSqlFil("SC6") + CRLF
+	cQuery += "   	AND C6_NUM		= " + ValToSql(SC5->C5_NUM)  +  CRLF
+	cQuery += " 	AND " + RetSqlDel("SC6") + CRLF
+Return cQuery

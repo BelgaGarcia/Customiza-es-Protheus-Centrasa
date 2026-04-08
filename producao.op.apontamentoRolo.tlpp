@@ -468,7 +468,7 @@ Static Function queryBuscarRecursosSG2()
 	cQuery += " 		AND G2_PRODUTO  = '"+AllTrim((cAliasTela)->C2_PRODUTO)+"'" + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SG2") + CRLF
 
-	cQuery += " ORDER BY SG2.R_E_C_N_O_"
+	cQuery += " ORDER BY G2_OPERAC" //SG2.R_E_C_N_O_"
 Return cQuery
 
 /*

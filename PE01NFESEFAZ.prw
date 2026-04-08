@@ -24,20 +24,16 @@ User Function PE01NFESEFAZ()
 			aRetorno := faturamento.nf.u_segundaUnidadeMedida(aRetorno)
 		EndIf
 
-		aAreaSD2 := SD2->(GetArea())
-		SD2->(dbSelectarea("SD2"))
-		SD2->(dbgotop())
-		SD2->(dbSeek(xFilial("SD2")+SF2->F2_DOC+SF2->F2_SERIE+SF2->F2_CLIENTE+SF2->F2_LOJA))
-		While !SD2->(EOF()) .AND. SF2->F2_DOC+SF2->F2_SERIE == SD2->D2_DOC+SD2->D2_SERIE
-			aRetorno[3]:=aRetorno[3]+' '+faturamento.nf.dadosComplementares.u_quartaNota()
-			SD2->(dbskip())
-		End
-		RestArea(aAreaSD2)
+		// Adiciona as mensagens customizadas da quarta nota
+		If FindFunction("faturamento.nf.dadosComplementares.u_quartaNota")
+			aRetorno[3]	:= aRetorno[3] + ' ' + faturamento.nf.dadosComplementares.u_quartaNota(aRetorno[1])
+		EndIf
 
 		// Realiza tratamento do icms diferido - OBS: DEVE SER A PRIMEIRA MSG
 		If FindFunction("faturamento.nf.dadosComplementares.u_icmsDiferido")
 			aRetorno[3] := faturamento.nf.dadosComplementares.u_icmsDiferido() + aRetorno[3]
 		EndIf
+
 	ElseIf lNFEntrada //Regras para as notas de entrada
 	EndIf
 Return aRetorno

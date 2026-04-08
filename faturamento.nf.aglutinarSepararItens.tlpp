@@ -1,0 +1,686 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.nf
+
+/*/{Protheus.doc} aglutinarSepararItens
+
+Aglutinar e Separar itens da nota.
+
+@type Function
+@author Gabriel Goncalves
+@since 20/02/2026
+@version P12
+@database ORACLE
+
+/*/
+User Function aglutinarSepararItens(aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, aCOFINS, aCOFINSST, aISSQN, aCST,;
+									aMed, aArma, aveicProd, aDI, aAdi, aExp, aPisAlqZ, aCofAlqZ, aAnfI,;
+									aComb, aCsosn, aPedCom, aICMSZFM, aFCI,;
+									aAgrPis, aAgrCofins, aICMUFDest,;
+									aIPIDevol, aItemVinc, aLote,;
+									aICMSMono, aBenef, aCredPresum, aDeson,;
+									aTotalItem)
+
+	Private aRetorno			:= {aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, aCOFINS, aCOFINSST, aISSQN, aCST,;
+									aMed, aArma, aveicProd, aDI, aAdi, aExp, aPisAlqZ, aCofAlqZ, aAnfI,;
+									aComb, aCsosn, aPedCom, aICMSZFM, aFCI,;
+									aAgrPis, aAgrCofins, aICMUFDest,;
+									aIPIDevol, aItemVinc, aLote,;
+									aICMSMono, aBenef, aCredPresum, aDeson,;
+									aTotalItem}	as array
+
+	Private aProdOriginal		:= aProd	as array
+	Private aICMSOriginal		:= aICMS	as array
+	Private aICMSSTOriginal		:= aICMSST	as array
+	Private aIPIOriginal		:= aIPI	as array
+	Private aPISOriginal		:= aPIS	as array
+	Private aPISSTOriginal		:= aPISST	as array
+	Private aCOFINSOriginal		:= aCOFINS	as array
+	Private aCOFINSSTOriginal	:= aCOFINSST	as array
+	Private aISSQNOriginal		:= aISSQN	as array
+	Private aCSTOriginal		:= aCST	as array
+	Private aMedOriginal		:= aMed	as array
+	Private aArmaOriginal		:= aArma	as array
+	Private aveicProdOriginal	:= aveicProd	as array
+	Private aDIOriginal			:= aDI	as array
+	Private aAdiOriginal		:= aAdi	as array
+	Private aExpOriginal		:= aExp	as array
+	Private aPisAlqZOriginal	:= aPisAlqZ	as array
+	Private aCofAlqZOriginal	:= aCofAlqZ	as array
+	Private aAnfIOriginal		:= aAnfI	as array
+	Private aCombOriginal		:= aComb	as array
+	Private aCsosnOriginal		:= aCsosn	as array
+	Private aPedComOriginal		:= aPedCom	as array
+	Private aICMSZFMOriginal	:= aICMSZFM	as array
+	Private aFCIOriginal		:= aFCI	as array
+	Private aAgrPisOriginal		:= aAgrPis	as array
+	Private aAgrCofinsOriginal	:= aAgrCofins	as array
+	Private aICMUFDestOriginal	:= aICMUFDest	as array
+	Private aIPIDevolOriginal	:= aIPIDevol	as array
+	Private aItemVincOriginal	:= aItemVinc	as array
+	Private aLoteOriginal		:= aLote	as array
+	Private aICMSMonoOriginal	:= aICMSMono	as array
+	Private aBenefOriginal		:= aBenef	as array
+	Private aCredPresumOriginal	:= aCredPresum	as array
+	Private aDesonOriginal		:= aDeson	as array
+	Private aTotalItemOriginal	:= aTotalItem	as array
+
+	Private aProdAglutinado			:= {}	as array
+	Private aICMSAglutinado			:= {}	as array
+	Private aICMSSTAglutinado		:= {}	as array
+	Private aIPIAglutinado			:= {}	as array
+	Private aPISAglutinado			:= {}	as array
+	Private aPISSTAglutinado		:= {}	as array
+	Private aCOFINSAglutinado		:= {}	as array
+	Private aCOFINSSTAglutinado		:= {}	as array
+	Private aISSQNAglutinado		:= {}	as array
+	Private aCSTAglutinado			:= {}	as array
+	Private aMedAglutinado			:= {}	as array
+	Private aArmaAglutinado			:= {}	as array
+	Private aveicProdAglutinado		:= {}	as array
+	Private aDIAglutinado			:= {}	as array
+	Private aAdiAglutinado			:= {}	as array
+	Private aExpAglutinado			:= {}	as array
+	Private aPisAlqZAglutinado		:= {}	as array
+	Private aCofAlqZAglutinado		:= {}	as array
+	Private aAnfIAglutinado			:= {}	as array
+	Private aCombAglutinado			:= {}	as array
+	Private aCsosnAglutinado		:= {}	as array
+	Private aPedComAglutinado		:= {}	as array
+	Private aICMSZFMAglutinado		:= {}	as array
+	Private aFCIAglutinado			:= {}	as array
+	Private aAgrPisAglutinado		:= {}	as array
+	Private aAgrCofinsAglutinado	:= {}	as array
+	Private aICMUFDestAglutinado	:= {}	as array
+	Private aIPIDevolAglutinado		:= {}	as array
+	Private aItemVincAglutinado		:= {}	as array
+	Private aLoteAglutinado			:= {}	as array
+	Private aICMSMonoAglutinado		:= {}	as array
+	Private aBenefAglutinado		:= {}	as array
+	Private aCredPresumAglutinado	:= {}	as array
+	Private aDesonAglutinado		:= {}	as array
+	Private aTotalItemAglutinado	:= {}	as array
+
+	Private aItensAglutinar		:= {}	as array
+	Private aItensNaoAglutinar	:= {}	as array
+	Private aItensSeparar		:= {}	as array
+	Private aItensNaoSeparar	:= {}	as array
+	Private cPedidosAglutinar	:= ""	as character
+
+	If validaExecucao()
+		preparaItens()
+		aglutinaItens()
+
+		aRetorno	:= {aProdAglutinado, aICMSAglutinado, aICMSSTAglutinado, aIPIAglutinado, aPISAglutinado, aPISSTAglutinado, aCOFINSAglutinado, aCOFINSSTAglutinado, aISSQNAglutinado, aCSTAglutinado,;
+						aMedAglutinado, aArmaAglutinado, aveicProdAglutinado, aDIAglutinado, aAdiAglutinado, aExpAglutinado, aPisAlqZAglutinado, aCofAlqZAglutinado, aAnfIAglutinado,;
+						aCombAglutinado, aCsosnAglutinado, aPedComAglutinado, aICMSZFMAglutinado, aFCIAglutinado,;
+						aAgrPisAglutinado, aAgrCofinsAglutinado, aICMUFDestAglutinado,;
+						aIPIDevolAglutinado, aItemVincAglutinado, aLoteAglutinado,;
+						aICMSMonoAglutinado, aBenefAglutinado, aCredPresumAglutinado, aDesonAglutinado,;
+						aTotalItemAglutinado}
+	EndIf
+Return aRetorno
+
+/*
+	Valida Execução da rotina
+*/
+Static Function validaExecucao()
+	Local lRetorno		:= .F.	as logical
+
+	If buscaItemAglutinar()
+		lRetorno	:= .T.
+	EndIf
+Return lRetorno
+
+/*
+	Busca item para aglutinar
+*/
+Static Function buscaItemAglutinar()
+	Local lRetorno	:= .F.	as logical
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+
+	cQuery := 	queryBuscaItemAglutinar()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	If (cAlias)->(!EoF())
+		lRetorno	:= .T.
+	EndIf
+
+	(cAlias)->(DbCloseArea())
+Return lRetorno
+
+/*
+	Query da Busca item para aglutinar
+*/
+Static Function queryBuscaItemAglutinar()
+	Local cQuery	:= ""	as character
+	Local cTiposAglutinar	:= FormatIn(AllTrim(GetNewPar("ZZ_TPAGLUT", "")), ",")
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D2_TP "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND D2_TP		IN "+cTiposAglutinar+" " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+Return cQuery
+
+/*
+	Prepara Itens
+*/
+Static Function preparaItens()
+	itensAlgutinar()
+	ItensNaoAglutinar()
+	ItensRetornoSeparar()
+	ItensRetornoNaoSeparar()
+Return
+
+/*
+	Itens da nota a aglutinar
+*/
+Static Function itensAlgutinar()
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+
+	cQuery := 	queryItensAlgutinar()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		aAdd(aItensAglutinar, {(cAlias)->D2_COD, (cAlias)->D2_PEDIDO})
+		
+		cPedidosAglutinar	+= IIF(Empty(cPedidosAglutinar), (cAlias)->D2_PEDIDO, "," + (cAlias)->D2_PEDIDO)
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query itens para aglutinar
+*/
+Static Function queryItensAlgutinar()
+	Local cQuery	:= ""	as character
+	Local cTiposAglutinar	:= FormatIn(AllTrim(GetNewPar("ZZ_TPAGLUT", "")), ",")
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D2_COD "	+ CRLF
+	cQuery += "        ,D2_PEDIDO "	+ CRLF
+	cQuery += "        ,MIN(D2_ITEM) D2_ITEM"	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND D2_TP		IN "+cTiposAglutinar+" " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " GROUP BY D2_COD, D2_PEDIDO "
+
+	cQuery += " ORDER BY D2_PEDIDO, D2_ITEM, D2_COD "
+Return cQuery
+
+/*
+	Itens da nota a nao aglutinar
+*/
+Static Function ItensNaoAglutinar()
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+
+	cQuery := 	queryItensNaoAlgutinar()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		aAdd(aItensNaoAglutinar, {(cAlias)->D2_COD, (cAlias)->D2_PEDIDO, (cAlias)->D2_ITEMPV})
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query itens para nao aglutinar
+*/
+Static Function queryItensNaoAlgutinar()
+	Local cQuery	:= ""	as character
+	Local cTiposAglutinar	:= FormatIn(AllTrim(GetNewPar("ZZ_TPAGLUT", "")), ",")
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D2_COD "	+ CRLF
+	cQuery += "        ,D2_PEDIDO "	+ CRLF
+	cQuery += "        ,D2_ITEMPV "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND D2_TP		NOT IN "+cTiposAglutinar+" " + CRLF
+	cQuery += " 		AND D2_TP		<> 'MP' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " ORDER BY D2_PEDIDO, D2_ITEMPV "
+Return cQuery
+
+/*
+	Itens de retorno da nota a separar
+*/
+Static Function ItensRetornoSeparar()
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+
+	cQuery := 	queryItensSeparar()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		aAdd(aItensSeparar, {(cAlias)->D2_COD, (cAlias)->D2_PEDIDO, (cAlias)->D2_ITEMPV})
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query itens para separar
+*/
+Static Function queryItensSeparar()
+	Local cQuery	:= ""	as character
+	Local cPedidos	:= FormatIn(cPedidosAglutinar, ",")
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D2_COD "	+ CRLF
+	cQuery += "        ,D2_PEDIDO "	+ CRLF
+	cQuery += "        ,D2_ITEMPV "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND D2_PEDIDO	IN "+cPedidos+" " + CRLF
+	cQuery += " 		AND D2_TP		= 'MP' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " ORDER BY D2_PEDIDO, D2_ITEMPV "
+Return cQuery
+
+/*
+	Itens de retorno da nota a nao separar
+*/
+Static Function ItensRetornoNaoSeparar()
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+
+	cQuery := 	queryItensNaoSeparar()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		aAdd(aItensNaoSeparar, {(cAlias)->D2_COD, (cAlias)->D2_PEDIDO, (cAlias)->D2_ITEMPV})
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query itens para nao separar
+*/
+Static Function queryItensNaoSeparar()
+	Local cQuery	:= ""	as character
+	Local cPedidos	:= FormatIn(cPedidosAglutinar, ",")
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D2_COD "	+ CRLF
+	cQuery += "        ,D2_PEDIDO "	+ CRLF
+	cQuery += "        ,D2_ITEMPV "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND D2_PEDIDO	NOT IN "+cPedidos+" " + CRLF
+	cQuery += " 		AND D2_TP		= 'MP' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " ORDER BY D2_PEDIDO, D2_ITEMPV "
+Return cQuery
+
+/*
+	Aglutina itens
+*/
+Static Function aglutinaItens()
+	Local nPosProduto		:= 0	as integer
+	Local nPosRetorno		:= 0	as integer
+	Local nPosAglutinado	:= 0	as integer
+	Local nPosPesoSeparado	:= 0	as integer
+	Local aPesoSeparado		:= {}	as array
+	Local nFatorSeparacao	:= 0	as numeric
+	Local nPosTotal			:= 0	as integer
+
+	// Itens a aglutinar
+	For nPosProduto := 1 To Len(aItensAglutinar)
+		For nPosRetorno := 1 To Len(aProdOriginal)
+			If aItensAglutinar[nPosProduto][1] == aProdOriginal[nPosRetorno][2] .And. aItensAglutinar[nPosProduto][2] == aProdOriginal[nPosRetorno][38]
+				nPosTotal		:= aScan(aTotalItemOriginal,{ |x| x[1] == aProdOriginal[nPosRetorno][55] })
+				nPosAglutinado	:= aScan(aProdAglutinado, {|aX| aX[2]+aX[38] == aItensAglutinar[nPosProduto][1] + aItensAglutinar[nPosProduto][2]})
+
+				If nPosAglutinado > 0
+					aProdAglutinado[nPosAglutinado][9]	+= aProdOriginal[nPosRetorno][9] //Quantidade
+					aProdAglutinado[nPosAglutinado][10]	+= aProdOriginal[nPosRetorno][10] //Total
+					aProdAglutinado[nPosAglutinado][12]	+= aProdOriginal[nPosRetorno][12] //Quantidade 2ª UM
+					aProdAglutinado[nPosAglutinado][13]	+= aProdOriginal[nPosRetorno][13] //Frete
+					aProdAglutinado[nPosAglutinado][14]	+= aProdOriginal[nPosRetorno][14] //Seguro
+					aProdAglutinado[nPosAglutinado][15]	+= aProdOriginal[nPosRetorno][15] //Desconto
+					aProdAglutinado[nPosAglutinado][19]	:= "" //Lote
+					aProdAglutinado[nPosAglutinado][20]	:= "" //SubLote
+					aProdAglutinado[nPosAglutinado][21]	+= aProdOriginal[nPosRetorno][21] //Outras Despesas
+					aProdAglutinado[nPosAglutinado][29]	+= aProdOriginal[nPosRetorno][29] //Desconto ICMS
+					aProdAglutinado[nPosAglutinado][30]	+= aProdOriginal[nPosRetorno][30] //Total Impostos
+					aProdAglutinado[nPosAglutinado][31]	+= aProdOriginal[nPosRetorno][31] //Desconto Zona Franca PIS
+					aProdAglutinado[nPosAglutinado][32]	+= aProdOriginal[nPosRetorno][32] //Desconto Zona Franca CONFINS
+					aProdAglutinado[nPosAglutinado][35]	+= aProdOriginal[nPosRetorno][35] //Total carga tributária Federal
+					aProdAglutinado[nPosAglutinado][36]	+= aProdOriginal[nPosRetorno][36] //Total carga tributária Estadual
+					aProdAglutinado[nPosAglutinado][37]	+= aProdOriginal[nPosRetorno][37] //Total carga tributária Municipal
+					aProdAglutinado[nPosAglutinado][39]	:= "" //Item do PV
+					aProdAglutinado[nPosAglutinado][43]	+= aProdOriginal[nPosRetorno][43] //Valor FECP
+					aProdAglutinado[nPosAglutinado][54]	+= aProdOriginal[nPosRetorno][54] //Valor ICMS
+					aProdAglutinado[nPosAglutinado][55]	:= "" //Item da Nota
+
+					If Len(aICMSOriginal[nPosRetorno]) > 0
+						aICMSAglutinado[nPosAglutinado][5]	+= aICMSOriginal[nPosRetorno][5]
+						aICMSAglutinado[nPosAglutinado][7]	+= aICMSOriginal[nPosRetorno][7]
+						aICMSAglutinado[nPosAglutinado][9]	+= aICMSOriginal[nPosRetorno][9]
+						aICMSAglutinado[nPosAglutinado][12]	+= aICMSOriginal[nPosRetorno][12]
+						aICMSAglutinado[nPosAglutinado][15]	+= aICMSOriginal[nPosRetorno][15]
+						aICMSAglutinado[nPosAglutinado][18]	+= aICMSOriginal[nPosRetorno][18]
+						aICMSAglutinado[nPosAglutinado][20]	+= aICMSOriginal[nPosRetorno][20]
+						aICMSAglutinado[nPosAglutinado][21]	+= aICMSOriginal[nPosRetorno][21]
+						aICMSAglutinado[nPosAglutinado][23]	+= aICMSOriginal[nPosRetorno][23]
+						aICMSAglutinado[nPosAglutinado][25]	+= aICMSOriginal[nPosRetorno][25]
+						aICMSAglutinado[nPosAglutinado][26]	+= aICMSOriginal[nPosRetorno][26]
+						aICMSAglutinado[nPosAglutinado][27]	+= aICMSOriginal[nPosRetorno][27]
+						aICMSAglutinado[nPosAglutinado][28]	+= aICMSOriginal[nPosRetorno][28]
+						aICMSAglutinado[nPosAglutinado][29]	+= aICMSOriginal[nPosRetorno][29]
+						aICMSAglutinado[nPosAglutinado][30]	+= aICMSOriginal[nPosRetorno][30]
+					EndIf
+
+					If Len(aIPIOriginal[nPosRetorno]) > 0
+						aIPIAglutinado[nPosAglutinado][6]	+= aIPIOriginal[nPosRetorno][6]
+						aIPIAglutinado[nPosAglutinado][7]	+= aIPIOriginal[nPosRetorno][7]
+						aIPIAglutinado[nPosAglutinado][10]	+= aIPIOriginal[nPosRetorno][10]
+					EndIf
+
+					If Len(aPISOriginal[nPosRetorno]) > 0
+						aPISAglutinado[nPosAglutinado][2]	+= aPISOriginal[nPosRetorno][2]
+						aPISAglutinado[nPosAglutinado][4]	+= aPISOriginal[nPosRetorno][4]
+						aPISAglutinado[nPosAglutinado][5]	+= aPISOriginal[nPosRetorno][5]
+					EndIf
+
+					If Len(aCOFINSOriginal[nPosRetorno]) > 0
+						aCOFINSAglutinado[nPosAglutinado][2]	+= aCOFINSOriginal[nPosRetorno][2]
+						aCOFINSAglutinado[nPosAglutinado][4]	+= aCOFINSOriginal[nPosRetorno][4]
+						aCOFINSAglutinado[nPosAglutinado][5]	+= aCOFINSOriginal[nPosRetorno][5]
+					EndIf
+
+					If nPosTotal > 0
+						aTotalItemAglutinado[nPosAglutinado][2]	+= aTotalItemOriginal[nPosTotal][2]
+					EndIf
+				Else
+					preencheArraysAglutinados(nPosRetorno)
+				EndIf
+			EndIf
+		Next nPosRetorno
+	Next nPosProduto
+
+	// Itens a nao aglutinar
+	For nPosProduto := 1 To Len(aItensNaoAglutinar)
+		For nPosRetorno := 1 To Len(aProdOriginal)
+			If aItensNaoAglutinar[nPosProduto][1] == aProdOriginal[nPosRetorno][2] .And. aItensNaoAglutinar[nPosProduto][2] == aProdOriginal[nPosRetorno][38] .And. aItensNaoAglutinar[nPosProduto][3] == aProdOriginal[nPosRetorno][39]
+				preencheArraysAglutinados(nPosRetorno)
+			EndIf
+		Next nPosRetorno
+	Next nPosProduto
+
+	// Itens a separar
+	For nPosProduto := 1 To Len(aItensSeparar)
+		For nPosRetorno := 1 To Len(aProdOriginal)
+			If aItensSeparar[nPosProduto][1] == aProdOriginal[nPosRetorno][2] .And. aItensSeparar[nPosProduto][2] == aProdOriginal[nPosRetorno][38] .And. aItensSeparar[nPosProduto][3] == aProdOriginal[nPosRetorno][39]
+				aPesoSeparado	:= calculaPesoSeparar(aItensSeparar[nPosProduto][2])
+				nPosTotal		:= aScan(aTotalItemOriginal,{ |x| x[1] == aProdOriginal[nPosRetorno][55] })
+
+				For nPosPesoSeparado := 1 To Len(aPesoSeparado[1])
+					preencheArraysAglutinados(nPosRetorno)
+
+					If aPesoSeparado[1][nPosPesoSeparado][2] <> aPesoSeparado[2]
+						nPosAglutinado	:= Len(aProdAglutinado)
+						nFatorSeparacao	:= aPesoSeparado[1][nPosPesoSeparado][2] / aPesoSeparado[2]
+
+						aProdAglutinado[nPosAglutinado][9]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][9] //Quantidade
+						aProdAglutinado[nPosAglutinado][10]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][10] //Total
+						aProdAglutinado[nPosAglutinado][12]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][12] //Quantidade 2ª UM
+						aProdAglutinado[nPosAglutinado][13]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][13] //Frete
+						aProdAglutinado[nPosAglutinado][14]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][14] //Seguro
+						aProdAglutinado[nPosAglutinado][15]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][15] //Desconto
+						aProdAglutinado[nPosAglutinado][21]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][21] //Outras Despesas
+						aProdAglutinado[nPosAglutinado][29]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][29] //Desconto ICMS
+						aProdAglutinado[nPosAglutinado][30]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][30] //Total Impostos
+						aProdAglutinado[nPosAglutinado][31]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][31] //Desconto Zona Franca PIS
+						aProdAglutinado[nPosAglutinado][32]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][32] //Desconto Zona Franca CONFINS
+						aProdAglutinado[nPosAglutinado][35]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][35] //Total carga tributária Federal
+						aProdAglutinado[nPosAglutinado][36]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][36] //Total carga tributária Estadual
+						aProdAglutinado[nPosAglutinado][37]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][37] //Total carga tributária Municipal
+						aProdAglutinado[nPosAglutinado][43]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][43] //Valor FECP
+						aProdAglutinado[nPosAglutinado][54]	:= nFatorSeparacao * aProdOriginal[nPosRetorno][54] //Valor ICMS
+
+						If Len(aICMSOriginal[nPosRetorno]) > 0
+							aICMSAglutinado[nPosAglutinado][5]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][5]
+							aICMSAglutinado[nPosAglutinado][7]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][7]
+							aICMSAglutinado[nPosAglutinado][9]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][9]
+							aICMSAglutinado[nPosAglutinado][12]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][12]
+							aICMSAglutinado[nPosAglutinado][15]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][15]
+							aICMSAglutinado[nPosAglutinado][18]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][18]
+							aICMSAglutinado[nPosAglutinado][20]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][20]
+							aICMSAglutinado[nPosAglutinado][21]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][21]
+							aICMSAglutinado[nPosAglutinado][23]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][23]
+							aICMSAglutinado[nPosAglutinado][25]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][25]
+							aICMSAglutinado[nPosAglutinado][26]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][26]
+							aICMSAglutinado[nPosAglutinado][27]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][27]
+							aICMSAglutinado[nPosAglutinado][28]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][28]
+							aICMSAglutinado[nPosAglutinado][29]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][29]
+							aICMSAglutinado[nPosAglutinado][30]	:= nFatorSeparacao * aICMSOriginal[nPosRetorno][30]
+						EndIf
+
+						If Len(aIPIOriginal[nPosRetorno]) > 0
+							aIPIAglutinado[nPosAglutinado][6]	:= nFatorSeparacao * aIPIOriginal[nPosRetorno][6]
+							aIPIAglutinado[nPosAglutinado][7]	:= nFatorSeparacao * aIPIOriginal[nPosRetorno][7]
+							aIPIAglutinado[nPosAglutinado][10]	:= nFatorSeparacao * aIPIOriginal[nPosRetorno][10]
+						EndIf
+
+						If Len(aPISOriginal[nPosRetorno]) > 0
+							aPISAglutinado[nPosAglutinado][2]	:= nFatorSeparacao * aPISOriginal[nPosRetorno][2]
+							aPISAglutinado[nPosAglutinado][4]	:= nFatorSeparacao * aPISOriginal[nPosRetorno][4]
+							aPISAglutinado[nPosAglutinado][5]	:= nFatorSeparacao * aPISOriginal[nPosRetorno][5]
+						EndIf
+
+						If Len(aCOFINSOriginal[nPosRetorno]) > 0
+							aCOFINSAglutinado[nPosAglutinado][2]	:= nFatorSeparacao * aCOFINSOriginal[nPosRetorno][2]
+							aCOFINSAglutinado[nPosAglutinado][4]	:= nFatorSeparacao * aCOFINSOriginal[nPosRetorno][4]
+							aCOFINSAglutinado[nPosAglutinado][5]	:= nFatorSeparacao * aCOFINSOriginal[nPosRetorno][5]
+						EndIf
+
+						If nPosTotal > 0
+							aTotalItemAglutinado[nPosAglutinado][2]	:= nFatorSeparacao * aTotalItemOriginal[nPosTotal][2]
+						EndIf
+					EndIf
+				Next nPosPesoSeparado
+			EndIf
+		Next nPosRetorno
+	Next nPosProduto
+
+	// Itens a nao separar
+	For nPosProduto := 1 To Len(aItensNaoSeparar)
+		For nPosRetorno := 1 To Len(aProdOriginal)
+			If aItensNaoSeparar[nPosProduto][1] == aProdOriginal[nPosRetorno][2] .And. aItensNaoSeparar[nPosProduto][2] == aProdOriginal[nPosRetorno][38] .And. aItensNaoSeparar[nPosProduto][3] == aProdOriginal[nPosRetorno][39]
+				preencheArraysAglutinados(nPosRetorno)
+			EndIf
+		Next nPosRetorno
+	Next nPosProduto
+
+	// Renumeracao dos itens
+	For nPosAglutinado := 1 To Len(aProdAglutinado)
+		aProdAglutinado[nPosAglutinado][1]	:= nPosAglutinado
+		aProdAglutinado[nPosAglutinado][55]	:= nPosAglutinado
+
+		aTotalItemAglutinado[nPosAglutinado][1]	:= nPosAglutinado
+	Next nPosAglutinado
+Return
+
+/*
+	Calcula peso a separar
+*/
+Static Function calculaPesoSeparar(cNumeroPedido)
+	Local aRetorno	:= {}	as array
+	Local cQuery	:= ""	as character
+	Local cAlias	:= ""	as character
+	Local aProdutos	:= {}	as array
+	Local nTotalPeso:= 0	as numeric
+
+	cQuery := 	queryCalculaPesoSeparar(cNumeroPedido)
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		aAdd(aProdutos, {(cAlias)->D2_COD, (cAlias)->C6_ZPESO})
+
+		nTotalPeso	+= (cAlias)->C6_ZPESO
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+
+	aRetorno	:= {aProdutos, nTotalPeso}
+Return aRetorno
+
+/*
+	Query peso a separar
+*/
+Static Function queryCalculaPesoSeparar(cNumeroPedido)
+	Local cQuery	:= ""	as character
+	Local cTiposAglutinar	:= FormatIn(AllTrim(GetNewPar("ZZ_TPAGLUT", "")), ",")
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D2_COD "	+ CRLF
+	cQuery += "        ,MIN(C6_ITEM) C6_ITEM "	+ CRLF
+	cQuery += "        ,SUM(C6_ZPESO) C6_ZPESO "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+	
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 	    AND C6_NUM		= D2_PEDIDO " + CRLF
+	cQuery += " 	    AND C6_ITEM		= D2_ITEMPV " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND D2_TP		IN "+cTiposAglutinar+" " + CRLF
+	cQuery += " 		AND D2_PEDIDO	= '"+cNumeroPedido+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " GROUP BY D2_COD "
+
+	cQuery += " ORDER BY C6_ITEM, D2_COD "
+Return cQuery
+
+/*
+	Preenche os arrays aglutinados com o original
+*/
+Static Function preencheArraysAglutinados(nPosOriginal)
+	Local nPosTotal	:= 0	as integer
+
+	aAdd(aProdAglutinado,		aClone(aProdOriginal[nPosOriginal]))
+	aAdd(aICMSAglutinado,		aClone(aICMSOriginal[nPosOriginal]))
+	aAdd(aICMSSTAglutinado,		aClone(aICMSSTOriginal[nPosOriginal]))
+	aAdd(aIPIAglutinado,		aClone(aIPIOriginal[nPosOriginal]))
+	aAdd(aPISAglutinado,		aClone(aPISOriginal[nPosOriginal]))
+	aAdd(aPISSTAglutinado,		aClone(aPISSTOriginal[nPosOriginal]))
+	aAdd(aCOFINSAglutinado,		aClone(aCOFINSOriginal[nPosOriginal]))
+	aAdd(aCOFINSSTAglutinado,	aClone(aCOFINSSTOriginal[nPosOriginal]))
+	aAdd(aISSQNAglutinado,		aClone(aISSQNOriginal[nPosOriginal]))
+	aAdd(aCSTAglutinado,		aClone(aCSTOriginal[nPosOriginal]))
+	aAdd(aMedAglutinado,		aClone(aMedOriginal[nPosOriginal]))
+	aAdd(aArmaAglutinado,		aClone(aArmaOriginal[nPosOriginal]))
+	aAdd(aveicProdAglutinado,	aClone(aveicProdOriginal[nPosOriginal]))
+	aAdd(aDIAglutinado,			aClone(aDIOriginal[nPosOriginal]))
+	aAdd(aAdiAglutinado,		aClone(aAdiOriginal[nPosOriginal]))
+	aAdd(aExpAglutinado,		aClone(aExpOriginal[nPosOriginal]))
+	aAdd(aPisAlqZAglutinado,	aClone(aPisAlqZOriginal[nPosOriginal]))
+	aAdd(aCofAlqZAglutinado,	aClone(aCofAlqZOriginal[nPosOriginal]))
+	aAdd(aAnfIAglutinado,		aClone(aAnfIOriginal[nPosOriginal]))
+	aAdd(aCombAglutinado,		aClone(aCombOriginal[nPosOriginal]))
+	aAdd(aCsosnAglutinado,		aClone(aCsosnOriginal[nPosOriginal]))
+	aAdd(aPedComAglutinado,		aClone(aPedComOriginal[nPosOriginal]))
+	aAdd(aICMSZFMAglutinado,	aClone(aICMSZFMOriginal[nPosOriginal]))
+	aAdd(aFCIAglutinado,		aClone(aFCIOriginal[nPosOriginal]))
+	aAdd(aAgrPisAglutinado,		aClone(aAgrPisOriginal[nPosOriginal]))
+	aAdd(aAgrCofinsAglutinado,	aClone(aAgrCofinsOriginal[nPosOriginal]))
+	aAdd(aICMUFDestAglutinado,	aClone(aICMUFDestOriginal[nPosOriginal]))
+	aAdd(aIPIDevolAglutinado,	aClone(aIPIDevolOriginal[nPosOriginal]))
+	aAdd(aItemVincAglutinado,	aClone(aItemVincOriginal[nPosOriginal]))
+	aAdd(aLoteAglutinado,		aClone(aLoteOriginal[nPosOriginal]))
+	aAdd(aICMSMonoAglutinado,	aClone(aICMSMonoOriginal[nPosOriginal]))
+	aAdd(aBenefAglutinado,		aClone(aBenefOriginal[nPosOriginal]))
+	aAdd(aCredPresumAglutinado,	aClone(aCredPresumOriginal[nPosOriginal]))
+	aAdd(aDesonAglutinado,		aClone(aDesonOriginal[nPosOriginal]))
+
+	nPosTotal	:= aScan(aTotalItemOriginal,{ |x| x[1] == aProdOriginal[nPosOriginal][55] })
+	If nPosTotal > 0
+		aAdd(aTotalItemAglutinado,	aClone(aTotalItemOriginal[nPosTotal]))
+	EndIf
+Return

@@ -16,24 +16,50 @@ Dados complementares na NF (Quarta Nota e Nota Usina).
 @database MSSQL
 
 /*/
-User Function quartaNota()
-	Private cMensagemRetorno	:= ""		as character
-	Private cNumeroQuartaNota	:= ""		as character
-	Private dDataQuartaNota		:= StoD("")		as date
-	Private cNumeroNotaUsina	:= ""		as character
-	Private cNumeroInspecao		:= ""		as character
-	Private cLoteBobina			:= ""		as character
-	Private cNumeroNotaCliente	:= ""		as character
-	Private cClienteNota		:= ""		as character
-	Private cLojaNota			:= ""		as character
-	Private lRefaturamento		:= .F.		as logical
-	Private cPedidoOriginal		:= ""		as character
+User Function quartaNota(aProd)
+	Local nPosProduto			:= 0	as integer
+	
+	Private cMensagemRetorno			:= ""	as character
+	Private cNumeroQuartaNota			:= ""	as character
+	Private dDataQuartaNota				:= StoD("")	as date
+	Private dDataNotaEntrada			:= StoD("")	as date
+	Private cNumeroNotaUsina			:= ""	as character
+	Private cSerieUsina					:= ""	as character
+	Private cTipoNotaEntrada			:= ""	as character
+	Private cCodigoFornecedor			:= ""	as character
+	Private cLojaFornecedor				:= ""	as character
+	Private nValorItem					:= 0	as numeric
+	Private cNumeroInspecao				:= ""	as character
+	Private cLoteBobina					:= ""	as character
+	Private cNumeroNotaCliente			:= ""	as character
+	Private cClienteNota				:= ""	as character
+	Private cLojaNota					:= ""	as character
+	Private lRefaturamento				:= .F.	as logical
+	Private cNotaRefaturamento			:= ""	as character
+	Private cSerieRefaturamento			:= ""	as character
+	Private cFornecedorRefaturamento	:= ""	as character
+	Private cLojaRefaturamento			:= ""	as character
+	Private cPedidoOriginal				:= ""	as character
+	Private cCFOPMensagem				:= ""	as character
+	Private aProdutos					:= aProd	as array
+	Private nProduto					:= 0	as integer
+	Private cMensagemFiscal				:= ""	as character
+	Private cMensagemComercial			:= ""	as character
+	Private aPesoTotal					:= {}	as array
+	Private cIDBobinaMensagem			:= ""	as character
 
 	If validaMensagemNoItem()
-		validaRefaturamento()
-		notaUsina()
-		dadosQuartaNota()
-		montaMensagem()
+		For nPosProduto	:= 1 To Len(aProdutos)
+			nProduto		:= nPosProduto
+			cCFOPMensagem	:= SubStr(aProdutos[nProduto][7],2,3)
+
+			validaRefaturamento()
+			notaUsina()
+			dadosQuartaNota()
+			montaMensagem()
+		Next nPosProduto
+
+		cMensagemRetorno	:= cMensagemFiscal + cMensagemComercial + "."
 	EndIf
 Return cMensagemRetorno
 
@@ -41,22 +67,108 @@ Return cMensagemRetorno
 	Monta Mensagem de retorno
 */
 Static Function montaMensagem()
-	Local cItemNota	:= SD2->D2_ITEM  //buscaItemNota()
+	If !(cLoteBobina $ cIDBobinaMensagem)
+		cMensagemFiscal		+= montaMensagemFiscal()
+	EndIf
 
-	cMensagemRetorno	:= " Material de s/ propriedade que nos foi enviado através da "
-
-	cMensagemRetorno	+= "(ITEM "+cItemNota+") "
-	cMensagemRetorno	+= "NF.:" + IIF(Empty(cNumeroQuartaNota), cNumeroNotaUsina, cNumeroQuartaNota)
-	cMensagemRetorno	+= "/No.Inspecao: " + AllTrim(cNumeroInspecao)
-	cMensagemRetorno	+= "/DATA: " + IIF(Empty(dDataQuartaNota), "", DtoC(dDataQuartaNota))
-	//cMensagemRetorno	+= "/VALOR: " + AllTrim(Str(SC6->C6_VALOR))
-	//cMensagemRetorno	+= "/PESO: " + AllTrim(Str(SC6->C6_ZPESO))
-	cMensagemRetorno	+= ValPaXPeso()
-	cMensagemRetorno	+= "/Cod.Bob.: " + AllTrim(cLoteBobina)
-	cMensagemRetorno	+= "/NF.Ent.: " + cNumeroNotaUsina
-
-	cMensagemRetorno	+= "."
+	cMensagemComercial	+= montaMensagemComercial()
 Return()
+
+/*
+	Monta mensagem Fiscal
+*/
+Static Function montaMensagemFiscal()
+	Local cRetorno	:= ""	as character
+
+	Private cAliasFornecedor	:= ""	as character
+	Private cAliasCliente		:= ""	as character
+
+	buscaDadosFornecedor()
+
+	If cCFOPMensagem == "902" .Or. ( cCFOPMensagem == "903" .And. cTipoNotaEntrada == "B" )
+		cRetorno	:= "MATERIAL DE SUA PROPRIEDADE QUE NOS FOI ENVIADO PARA INDUSTRIALIZAÇÃO ATRAVÉS DA(s):"
+		cRetorno	+= " NF " + cNumeroNotaUsina
+		cRetorno	+= ", SÉRIE " + cSerieUsina
+		cRetorno	+= ", DATA EMISSÃO " + DtoC(dDataNotaEntrada)
+		cRetorno	+= ", VALOR " + AllTrim(Str(nValorItem)) + "."
+
+	ElseIf cCFOPMensagem == "925" .Or. ( cCFOPMensagem == "903" .And. cTipoNotaEntrada == "N" )
+		cRetorno	:= "MATERIAL DE SUA PROPRIEDADE QUE NOS FOI ENVIADO POR CONTA E ORDEM PELO"
+		cRetorno	+= " FORNECEDOR " + AllTrim((cAliasFornecedor)->A2_NOME)
+		cRetorno	+= " SITUADO A " + AllTrim((cAliasFornecedor)->A2_END) + " " + AllTrim((cAliasFornecedor)->A2_NR_END)
+		cRetorno	+= ", BAIRRO: " + AllTrim((cAliasFornecedor)->A2_BAIRRO)
+		cRetorno	+= ", CIDADE: " + AllTrim((cAliasFornecedor)->A2_MUN)
+		cRetorno	+= ", ESTADO: " + AllTrim((cAliasFornecedor)->A2_EST)
+		cRetorno	+= ", INSC EST " + AllTrim((cAliasFornecedor)->A2_INSCR)
+		cRetorno	+= ", CNPJ " + AllTrim((cAliasFornecedor)->A2_CGC)
+		cRetorno	+= ", ATRAVÉS DA NF " + cNumeroNotaUsina
+		cRetorno	+= ", SÉRIE " + cSerieUsina
+		cRetorno	+= ", DATA EMISSAO " + DtoC(dDataNotaEntrada)
+		cRetorno	+= ", VALOR " + AllTrim(Str(nValorItem)) + "."
+		//cRetorno	+= " NF DE ENTRADA: " + IIF(Empty(cNumeroQuartaNota), cNumeroNotaUsina, cNumeroQuartaNota) + "."
+
+	ElseIf cCFOPMensagem == "901"
+		cRetorno	:= "MATERIAL QUE ESTAMOS ENVIANDO PARA INDUSTRIALIZAÇÃO COM POSTERIOR RETORNO."
+		cRetorno	+= " INSP.: " + cNumeroInspecao
+		cRetorno	+= " / ID BOBINA: " + cLoteBobina + "."
+
+	ElseIf cCFOPMensagem == "924"
+		cRetorno	:= "REMESSA PARA INDUSTRIALIZAÇÃO ENTREGUE PELO PRIMEIRO BENEFICIADOR POR CONTA E ORDEM DO AUTOR DA ENCOMENDA -"
+
+		If cTipoNotaEntrada == "B"
+			buscaDadosCliente()
+
+			cRetorno	+= " CLIENTE " + AllTrim((cAliasCliente)->A1_NOME)
+			cRetorno	+= " SITUADA A " + AllTrim((cAliasCliente)->A1_END) + " " + AllTrim((cAliasCliente)->A1_COMPLEM)
+			cRetorno	+= " " + AllTrim((cAliasCliente)->A1_BAIRRO)
+			cRetorno	+= "/" + AllTrim((cAliasCliente)->A1_MUN)
+			cRetorno	+= " - " + AllTrim((cAliasCliente)->A1_EST)
+			cRetorno	+= " - CNPJ: " + AllTrim((cAliasCliente)->A1_CGC) + "."
+			cRetorno	+= " Insc. Est. " + AllTrim((cAliasCliente)->A1_INSCR)
+
+			(cAliasCliente)->(DbCloseArea())
+
+		ElseIf cTipoNotaEntrada == "N"
+			cRetorno	+= " FORNECEDOR " + AllTrim((cAliasFornecedor)->A2_NOME)
+			cRetorno	+= " SITUADA A " + AllTrim((cAliasFornecedor)->A2_END) + " " + AllTrim((cAliasFornecedor)->A2_NR_END)
+			cRetorno	+= " " + AllTrim((cAliasFornecedor)->A2_BAIRRO)
+			cRetorno	+= "/" + AllTrim((cAliasFornecedor)->A2_MUN)
+			cRetorno	+= " - " + AllTrim((cAliasFornecedor)->A2_EST)
+			cRetorno	+= " - CNPJ: " + AllTrim((cAliasFornecedor)->A2_CGC) + "."
+			cRetorno	+= " Insc. Est. " + AllTrim((cAliasFornecedor)->A2_INSCR)
+		EndIf
+
+		cRetorno	+= " ID MATERIA PRIMA: " + cLoteBobina
+	EndIf
+
+	If !Empty(cRetorno)
+		cIDBobinaMensagem	+= cLoteBobina + "/"
+	EndIf
+
+	(cAliasFornecedor)->(DbCloseArea())
+Return cRetorno
+
+/*
+	Monta mensagem comercial
+*/
+Static Function montaMensagemComercial()
+	Local cRetorno	:= ""	as character
+	Local cItemNota	:= AllTrim(Str(aProdutos[nProduto][1]))	as character
+
+	If cCFOPMensagem $ "124/125/902/925"
+		cRetorno	+= "(ITEM "+cItemNota+") "
+		cRetorno	+= "NF.:" + IIF(Empty(cNumeroNotaUsina), cNumeroQuartaNota, cNumeroNotaUsina)
+		cRetorno	+= "/No.Inspecao: " + AllTrim(cNumeroInspecao)
+		cRetorno	+= "/DATA: " + DtoC(dDataNotaEntrada) //IIF(Empty(dDataQuartaNota), "", DtoC(dDataQuartaNota))
+		cRetorno	+= ValPaXPeso()
+		cRetorno	+= "/Cod.Bob.: " + AllTrim(cLoteBobina)
+		cRetorno	+= "/NF.Ent.: " + IIF(Empty(cNumeroNotaUsina), cNumeroQuartaNota, cNumeroNotaUsina)
+
+		If cCFOPMensagem $ "124/125" //Empty(aProdutos[nProduto][39])
+			cRetorno	+= "/Lotes: " + informacaoLotes()
+		EndIf
+	EndIf
+Return cRetorno
 
 /*
 	Nota da Usina
@@ -73,6 +185,12 @@ Static Function notaUsina()
 	If (cAlias)->(!EoF())
 		If Empty((cAlias)->D1_ZNFUSIN)
 			cNumeroNotaUsina	:= (cAlias)->D1_DOC
+			cSerieUsina			:= (cAlias)->D1_SERIE
+			cTipoNotaEntrada	:= (cAlias)->D1_TIPO
+			cCodigoFornecedor	:= (cAlias)->D1_FORNECE
+			cLojaFornecedor		:= (cAlias)->D1_LOJA
+			dDataNotaEntrada	:= StoD((cAlias)->D1_EMISSAO)
+			nValorItem			:= (cAlias)->D1_TOTAL
 			cNumeroInspecao		:= (cAlias)->D1_LOTEFOR
 			cLoteBobina			:= (cAlias)->D1_LOTECTL
 			cNumeroNotaCliente	:= (cAlias)->DH_DOC
@@ -80,6 +198,12 @@ Static Function notaUsina()
 			cLojaNota			:= (cAlias)->DH_LOJACLI
 		Else
 			cNumeroNotaUsina	:= (cAlias)->D1_ZNFUSIN
+			cSerieUsina			:= (cAlias)->D1_SERIE
+			cTipoNotaEntrada	:= (cAlias)->D1_TIPO
+			cCodigoFornecedor	:= (cAlias)->D1_FORNECE
+			cLojaFornecedor		:= (cAlias)->D1_LOJA
+			dDataNotaEntrada	:= StoD((cAlias)->D1_EMISSAO)
+			nValorItem			:= (cAlias)->D1_TOTAL
 			cNumeroInspecao		:= (cAlias)->D1_LOTEFOR
 			cLoteBobina			:= (cAlias)->D1_LOTECTL
 			cNumeroNotaCliente	:= (cAlias)->D1_DOC
@@ -97,7 +221,13 @@ Static Function queryNotaUsina()
 
 	cQuery += " SELECT " + CRLF
 	cQuery += "        D1_DOC "	+ CRLF
+	cQuery += "        ,D1_SERIE "	+ CRLF
+	cQuery += "        ,D1_TIPO "	+ CRLF
+	cQuery += "        ,D1_FORNECE "	+ CRLF
+	cQuery += "        ,D1_LOJA "	+ CRLF
 	cQuery += "        ,D1_LOTEFOR "	+ CRLF
+	cQuery += "        ,D1_EMISSAO "	+ CRLF
+	cQuery += "        ,D1_TOTAL "	+ CRLF
 	cQuery += "        ,D1_LOTECTL "	+ CRLF
 	cQuery += "        ,D1_ZNFUSIN "	+ CRLF
 	cQuery += "        ,DH_DOC "	+ CRLF
@@ -137,7 +267,7 @@ Static Function queryNotaUsina()
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SC5") + CRLF
-	cQuery += " 		AND C5_NUM  = '"+IIF(lRefaturamento, cPedidoOriginal, SD2->D2_PEDIDO)+"' " + CRLF
+	cQuery += " 		AND C5_NUM  = '"+IIF(lRefaturamento, cPedidoOriginal, aProdutos[nProduto][38])+"' " + CRLF
 	cQuery += " 		AND ( D1_TIPO  = 'N' OR ( D1_TIPO  = 'B' AND F1_ESPECIE <> 'GER' ) )" + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SC5") + CRLF
 Return cQuery
@@ -205,9 +335,14 @@ Static Function validaMensagemNoItem()
 	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
 
 	(cAlias)->(DbGoTop())
-	If (cAlias)->(!EoF())
-		lRetorno	:= .T.
-	EndIf
+	While (cAlias)->(!EoF())
+		If SubStr((cAlias)->C6_CF,2,3) $ "124/125/901/903/902/924/925"
+			lRetorno		:= .T.
+			//cCFOPMensagem	:= SubStr((cAlias)->C6_CF,2,3)
+		EndIf
+
+		(cAlias)->(DbSkip())
+	EndDo
 
 	(cAlias)->(DbCloseArea())
 Return lRetorno
@@ -219,66 +354,17 @@ Static Function queryValidaMensagemNoItem()
 	Local cQuery	:= ""	as character
 
 	cQuery += " SELECT " + CRLF
-	cQuery += "        C6_ITEM "		+ CRLF
+	cQuery += "        C6_CF "		+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SC6") + CRLF
 
-	cQuery += " INNER JOIN " + CRLF
-	cQuery += "     " + RetSQLTab("SB1") + CRLF
-	cQuery += "     	ON" + CRLF
-	cQuery += " 	    " + RetSqlFil("SB1") + CRLF
-	cQuery += " 	    AND B1_COD	= C6_PRODUTO " + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
-
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
-	cQuery += " 		AND C6_NUM	= '"+SD2->D2_PEDIDO+"' " + CRLF
-	cQuery += " 		AND B1_TIPO	= 'MP' " + CRLF
+	cQuery += " 		AND C6_NOTA		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND C6_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
-Return cQuery
-
-/*
-	Busca o item da nota
-*/
-Static Function buscaItemNota()
-	Local cQuery	:= ""	as character
-	Local cAlias
-	Local cRetorno	:= ""	as character
-
-	cQuery := 	queryBuscaItemNota()
-
-	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
-
-	(cAlias)->(DbGoTop())
-	If (cAlias)->(!EoF())
-		cRetorno	:= (cAlias)->D2_ITEM
-	EndIf
-
-	(cAlias)->(DbCloseArea())
-Return cRetorno
-
-/*
-	Query busca item nota
-*/
-Static Function queryBuscaItemNota()
-	Local cQuery	:= ""	as character
-
-	cQuery += " SELECT " + CRLF
-	cQuery += "        D2_ITEM "		+ CRLF
-
-	cQuery += " FROM " + CRLF
-	cQuery += "     " + RetSQLTab("SD2") + CRLF
-
-	cQuery += " WHERE " + CRLF
-	cQuery += " 	    1 = 1 " + CRLF
-	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
-	cQuery += " 		AND D2_DOC  = '"+SC6->C6_NOTA+"' " + CRLF
-	cQuery += " 		AND D2_SERIE  = '"+SC6->C6_SERIE+"' " + CRLF
-	cQuery += " 		AND D2_PEDIDO  = '"+SC6->C6_NUM+"' " + CRLF
-	cQuery += " 		AND D2_ITEMPV  = '"+SC6->C6_ITEM+"' " + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
 Return cQuery
 
 /*
@@ -295,11 +381,19 @@ Static Function ValPaXPeso()
 
 	(cAlias)->(DbGoTop())
 	If (cAlias)->(!EoF())
-		cRetorno	:= "/VALOR: " + AllTrim((Transform((cAlias)->VALOR_TOTAL, "@E 999,999,999,999.99"))) +;
-						"/PESO: " + AllTrim((Transform(IIF((cAlias)->C6_ZUMNFE == "TL", (cAlias)->QUANT / 1000, (cAlias)->QUANT), "@E 999,999,999.9999")))
+		/*cRetorno	:= "/VALOR: " + AllTrim((Transform(SD2->D2_TOTAL, "@E 999,999,999,999.99"))) +;
+						"/PESO: " + AllTrim((Transform(IIF(SD2->D2_TP == "MP" .And. (cAlias)->C6_ZUMNFE == "TL", SD2->D2_QUANT / 1000, SD2->D2_QUANT), "@E 999,999,999.9999")))*/
+		cRetorno	:= "/VALOR: " + AllTrim((Transform(aProdutos[nProduto][10], "@E 999,999,999,999.99"))) +;
+						"/PESO: " + AllTrim((Transform(IIF((cAlias)->B1_TIPO == "MP", aProdutos[nProduto][9], (cAlias)->C6_ZPESO), "@E 999,999,999.9999")))
 
-		If (cAlias)->QTD_TOTAL > (cAlias)->QUANT
-			cRetorno	+= " (Parcial)"
+		If !(cAlias)->B1_TIPO == "MP"
+			cRetorno	+= calculaPesoTotal((cAlias)->C6_ZPESO)
+		Else
+			If (cAlias)->C6_QTDVEN > (cAlias)->C6_QTDENT
+				cRetorno	+= " (Parcial)"
+			Else
+				cRetorno	+= " (Saldo)"
+			EndIf
 		EndIf
 	EndIf
 
@@ -313,39 +407,125 @@ Static Function queryValPaXPeso()
 	Local cQuery	:= ""	as character
 
 	cQuery += " SELECT " + CRLF
-	cQuery += "        SUM(D2_QUANT) AS QUANT "		+ CRLF
+	/*cQuery += "        SUM(D2_QUANT) AS QUANT "		+ CRLF
 	cQuery += "        ,C6_VALOR AS VALOR_TOTAL "		+ CRLF
 	cQuery += "        ,C6_QTDVEN AS QTD_TOTAL "		+ CRLF
-	cQuery += "        ,C6_ZUMNFE AS C6_ZUMNFE "		+ CRLF
+	cQuery += "        ,C6_ZUMNFE AS C6_ZUMNFE "		+ CRLF*/
+	If !Empty(aProdutos[nProduto][39])
+		cQuery += "        C6_QTDVEN "		+ CRLF
+		cQuery += "        ,C6_QTDENT "		+ CRLF
+		cQuery += "        ,C6_ZPESO "		+ CRLF
+		cQuery += "        ,B1_TIPO "		+ CRLF
+	Else
+		cQuery += "        SUM(C6_QTDVEN) C6_QTDVEN "		+ CRLF
+		cQuery += "        ,SUM(C6_QTDENT) C6_QTDENT "		+ CRLF
+		cQuery += "        ,SUM(C6_ZPESO) C6_ZPESO "		+ CRLF
+		cQuery += "        ,B1_TIPO "		+ CRLF
+	EndIf
 
 	cQuery += " FROM " + CRLF
-	cQuery += "     " + RetSQLTab("SD2") + CRLF
+	//cQuery += "     " + RetSQLTab("SD2") + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
 
-	cQuery += " INNER JOIN " + CRLF
+	/*cQuery += " INNER JOIN " + CRLF
 	cQuery += "     " + RetSQLTab("SC6") + CRLF
 	cQuery += "     	ON" + CRLF
 	cQuery += " 	    " + RetSqlFil("SC6") + CRLF
 	cQuery += " 	    AND C6_NUM		= '"+SD2->D2_PEDIDO+"' " + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF*/
 
 	cQuery += " INNER JOIN " + CRLF
 	cQuery += "     " + RetSQLTab("SB1") + CRLF
 	cQuery += "     	ON" + CRLF
 	cQuery += " 	    " + RetSqlFil("SB1") + CRLF
 	cQuery += " 	    AND B1_COD		= C6_PRODUTO " + CRLF
-	cQuery += " 	    AND B1_TIPO		= 'MP' " + CRLF
+	//cQuery += " 	    AND B1_TIPO		= 'MP' " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
 
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
-	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	/*cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
 	cQuery += " 		AND D2_DOC		= '"+SD2->D2_DOC+"' " + CRLF
 	cQuery += " 		AND D2_SERIE	= '"+SD2->D2_SERIE+"' " + CRLF
 	cQuery += " 		AND D2_PEDIDO	= '"+SD2->D2_PEDIDO+"' " + CRLF
+	cQuery += " 		AND D2_ITEMPV	= '"+SD2->D2_ITEMPV+"' " + CRLF
 	cQuery += " 		AND D2_TP		= 'PA' " + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF*/
 
-	cQuery += " GROUP BY C6_VALOR, C6_QTDVEN, C6_ZUMNFE " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 		AND C6_NOTA		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND C6_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND C6_NUM		= '"+aProdutos[nProduto][38]+"' " + CRLF
+	cQuery += " 		AND C6_PRODUTO	= '"+aProdutos[nProduto][2]+"' " + CRLF
+	
+	If !Empty(aProdutos[nProduto][39])
+		cQuery += " 		AND C6_ITEM		= '"+aProdutos[nProduto][39]+"' " + CRLF
+	EndIf
+
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	//cQuery += " GROUP BY C6_VALOR, C6_QTDVEN, C6_ZUMNFE " + CRLF
+	
+	If Empty(aProdutos[nProduto][39])
+		cQuery += " GROUP BY B1_TIPO " + CRLF
+	EndIf
+Return cQuery
+
+/*
+	Busca informacao dos lotes aglutinados
+*/
+Static Function informacaoLotes()
+	Local cQuery	:= ""	as character
+	Local cAlias
+	Local cRetorno	:= ""	as character
+	Local cPecas	:= ""	as character
+
+	cQuery	:= queryInformacaoLotes()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While !(cAlias)->(EoF())
+		If (cAlias)->C6_UM == "PC"
+			cPecas	:= AllTrim(Str((cAlias)->C6_QTDVEN))
+		ElseIf SubStr((cAlias)->C6_LOTECTL, 12, 1) == "G"
+			cPecas	:= "N/A"
+		Else
+			cPecas	:= "1"
+		EndIf
+
+		cRetorno	+= " (" + AllTrim((cAlias)->C6_LOTECTL) + ", " + cPecas + " peças, peso " + AllTrim(Str(IIF((cAlias)->C6_ZQTDNFE > 0, (cAlias)->C6_ZQTDNFE, (cAlias)->C6_ZPESO))) + " )"
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return cRetorno
+
+/*
+	Query Informações dos lotes aglutinados
+*/
+Static Function queryInformacaoLotes()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        C6_LOTECTL "		+ CRLF
+	cQuery += "        ,C6_QTDVEN "		+ CRLF
+	cQuery += "        ,C6_ZQTDNFE "		+ CRLF
+	cQuery += "        ,C6_ZPESO "		+ CRLF
+	cQuery += "        ,C6_UM "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 		AND C6_NOTA		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND C6_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND C6_NUM		= '"+aProdutos[nProduto][38]+"' " + CRLF
+	cQuery += " 		AND C6_PRODUTO	= '"+aProdutos[nProduto][2]+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
 Return cQuery
 
 /*
@@ -354,7 +534,6 @@ Return cQuery
 Static Function validaRefaturamento()
 	Local cQuery			:= ""	as character
 	Local cAlias
-	Local cOPRefaturamento	:= GetNewPar("ZV_C6OPER7", "")	as character
 
 	cQuery := 	queryValidaRefaturamento()
 
@@ -362,11 +541,14 @@ Static Function validaRefaturamento()
 
 	(cAlias)->(DbGoTop())
 	If (cAlias)->(!EoF())
-		If AllTrim((cAlias)->C6_OPER) $ cOPRefaturamento
-			lRefaturamento	:= .T.
+		lRefaturamento	:= .T.
 
-			buscaPedidoOriginal()
-		EndIf
+		cNotaRefaturamento			:= (cAlias)->Z7_NUMNF
+		cSerieRefaturamento			:= (cAlias)->Z7_SERIE
+		cFornecedorRefaturamento	:= (cAlias)->Z7_FORNECE
+		cLojaRefaturamento			:= (cAlias)->Z7_LOJA
+
+		buscaPedidoOriginal()
 	EndIf
 
 	(cAlias)->(DbCloseArea())
@@ -379,19 +561,19 @@ Static Function queryValidaRefaturamento()
 	Local cQuery	:= ""	as character
 
 	cQuery += " SELECT " + CRLF
-	cQuery += "        C6_OPER " + CRLF
+	cQuery += "        Z7_NUMNF " + CRLF
+	cQuery += "        ,Z7_SERIE " + CRLF
+	cQuery += "        ,Z7_FORNECE " + CRLF
+	cQuery += "        ,Z7_LOJA " + CRLF
 
 	cQuery += " FROM " + CRLF
-	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     " + RetSQLTab("SZ7") + CRLF
 
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
-	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
-	cQuery += " 		AND C6_NOTA		= '"+SD2->D2_DOC+"' " + CRLF
-	cQuery += " 		AND C6_SERIE	= '"+SD2->D2_SERIE+"' " + CRLF
-	cQuery += " 		AND C6_NUM		= '"+SD2->D2_PEDIDO+"' " + CRLF
-	cQuery += " 		AND C6_ITEM		= '"+SD2->D2_ITEMPV+"' " + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ7") + CRLF
+	cQuery += " 		AND Z7_NUMPV	= '"+aProdutos[nProduto][38]+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ7") + CRLF
 Return cQuery
 
 /*
@@ -423,17 +605,7 @@ Static Function queryBuscaPedidoOriginal()
 	cQuery += "        D2_PEDIDO "	+ CRLF
 
 	cQuery += " FROM " + CRLF
-	cQuery += "     " + RetSQLTab("SC6") + CRLF
-
-	cQuery += " INNER JOIN " + CRLF
 	cQuery += "     " + RetSQLTab("SD1") + CRLF
-	cQuery += "     	ON" + CRLF
-	cQuery += " 	    D1_FILIAL		= C6_FILIAL " + CRLF
-	cQuery += " 	    AND D1_DOC		= C6_NFORI" + CRLF
-	cQuery += " 	    AND D1_SERIE	= C6_SERIORI " + CRLF
-	cQuery += " 	    AND D1_ITEM		= C6_ITEMORI " + CRLF
-	cQuery += " 	    AND D1_COD		= C6_PRODUTO " + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
 
 	cQuery += " INNER JOIN " + CRLF
 	cQuery += "     " + RetSQLTab("SD2") + CRLF
@@ -446,10 +618,175 @@ Static Function queryBuscaPedidoOriginal()
 
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD1") + CRLF
+	cQuery += " 		AND D1_DOC		= '"+cNotaRefaturamento+"' " + CRLF
+	cQuery += " 		AND D1_SERIE	= '"+cSerieRefaturamento+"' " + CRLF
+	cQuery += " 		AND D1_FORNECE	= '"+cFornecedorRefaturamento+"' " + CRLF
+	cQuery += " 		AND D1_LOJA		= '"+cLojaRefaturamento+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
+Return cQuery
+
+/*
+	Busca dados fornecedor
+*/
+Static Function buscaDadosFornecedor()
+	Local cQuery	:= ""	as character
+
+	cQuery := 	queryBuscaDadosFornecedor()
+
+	MPSysOpenQuery( cQuery, cAliasFornecedor := GetNextAlias() )
+Return
+
+/*
+	Query da Busca dados fornecedor
+*/
+Static Function queryBuscaDadosFornecedor()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        * "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SA2") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SA2") + CRLF
+	cQuery += " 		AND A2_COD		= '"+cCodigoFornecedor+"' " + CRLF
+	cQuery += " 		AND A2_LOJA		= '"+cLojaFornecedor+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SA2") + CRLF
+Return cQuery
+
+/*
+	Busca dados cliente
+*/
+Static Function buscaDadosCliente()
+	Local cQuery	:= ""	as character
+
+	cQuery := 	queryBuscaDadosCliente()
+
+	MPSysOpenQuery( cQuery, cAliasCliente := GetNextAlias() )
+Return
+
+/*
+	Query da Busca dados cliente
+*/
+Static Function queryBuscaDadosCliente()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        * "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SA1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SA1") + CRLF
+	cQuery += " 		AND A1_COD		= '"+cCodigoFornecedor+"' " + CRLF
+	cQuery += " 		AND A1_LOJA		= '"+cLojaFornecedor+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SA1") + CRLF
+Return cQuery
+
+/*
+	Calcula Peso Total
+*/
+Static Function calculaPesoTotal(nPesoPA)
+	Local cRetorno		:= ""	as character
+	Local nPosPesoTotal	:= 0	as integer
+	Local cQuery		:= ""	as character
+	Local cAliasTotal
+	Local cAliasParcial
+
+	nPosPesoTotal	:= aScan(aPesoTotal, {|aX| aX[1] == cLoteBobina})
+
+	If nPosPesoTotal > 0
+		aPesoTotal[nPosPesoTotal][3]	+= nPesoPA
+	Else
+		cQuery := 	queryBuscaPesoMP()
+
+		MPSysOpenQuery( cQuery, cAliasTotal := GetNextAlias() )
+		
+		(cAliasTotal)->(DbGoTop())
+		If (cAliasTotal)->(!EoF())			
+			aAdd(aPesoTotal, {cLoteBobina, (cAliasTotal)->C6_QTDVEN, nPesoPA})
+		EndIf
+		
+		(cAliasTotal)->(DbCloseArea())
+
+		nPosPesoTotal	:= Len(aPesoTotal)
+
+		cQuery := 	queryBuscaPesoParcial()
+
+		MPSysOpenQuery( cQuery, cAliasParcial := GetNextAlias() )
+
+		(cAliasParcial)->(DbGoTop())
+		If (cAliasParcial)->(!EoF())			
+			aPesoTotal[nPosPesoTotal][3]	+= (cAliasParcial)->C6_ZPESO
+		EndIf
+		
+		(cAliasParcial)->(DbCloseArea())
+	EndIf
+
+	If aPesoTotal[nPosPesoTotal][2] > aPesoTotal[nPosPesoTotal][3]
+		cRetorno	:= " (Parcial)"
+	Else
+		cRetorno	:= " (Saldo)"
+	EndIf
+Return cRetorno
+
+/*
+	Query Peso MP
+*/
+Static Function queryBuscaPesoMP()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        C6_QTDVEN "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SB1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("SB1") + CRLF
+	cQuery += " 	    AND B1_COD		= C6_PRODUTO " + CRLF
+	cQuery += " 	    AND B1_TIPO		= 'MP' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
-	cQuery += " 		AND C6_NOTA		= '"+SD2->D2_DOC+"' " + CRLF
-	cQuery += " 		AND C6_SERIE	= '"+SD2->D2_SERIE+"' " + CRLF
-	cQuery += " 		AND C6_NUM		= '"+SD2->D2_PEDIDO+"' " + CRLF
-	cQuery += " 		AND C6_ITEM		= '"+SD2->D2_ITEMPV+"' " + CRLF
+	cQuery += " 		AND C6_NUM		= '"+IIF(lRefaturamento, cPedidoOriginal, aProdutos[nProduto][38])+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+Return cQuery
+
+/*
+	Query Peso Parcial Faturado
+*/
+Static Function queryBuscaPesoParcial()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        SUM(C6_ZPESO) C6_ZPESO "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SB1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("SB1") + CRLF
+	cQuery += " 	    AND B1_COD		= C6_PRODUTO " + CRLF
+	cQuery += " 	    AND B1_TIPO		<> 'MP' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 		AND C6_NOTA		<> '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND C6_SERIE	<> '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += " 		AND C6_NUM		= '"+aProdutos[nProduto][38]+"' " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
 Return cQuery

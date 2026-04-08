@@ -144,8 +144,11 @@ Static Function getAutoItens()
 			cCodidoTes := cCodigoTesSemLote
 		Endif
 
-		If ( SF4->(dbSeek(FWxFilial("SF4")+cCodidoTes))) .And. (SF4->F4_PODER3 $ "D/R")
-			cIdPoder3 := (cAliasSD1)->FS_NUMSEQ
+		If ( SF4->(dbSeek(FWxFilial("SF4")+(cAliasSD1)->FS_TES )))
+			cCodidoTes := SF4->F4_TESDV
+			If (SF4->F4_PODER3 $ "D/R")
+				cIdPoder3 := (cAliasSD1)->FS_NUMSEQ
+			Endif
 		Endif
 
 		If ( nQuantidade == 0 )
@@ -168,10 +171,12 @@ Static Function getAutoItens()
 		aAdd( aRecord, { "C6_VALOR"		, nVlrTotal  			 	, NIL})
 		aAdd( aRecord, { "C6_TES"		, cCodidoTes               	, NIL})
 		aAdd( aRecord, { "C6_LOCAL"     , cArmazem     				, NIL})
+
 		If !Empty(cLoteAjuste)
 			aAdd( aRecord, { "C6_LOTECTL"	, cLoteAjuste              	, NIL})
 			aAdd( aRecord, { "C6_DTVALID"	, dValidadeLote            	, NIL})
 		Endif
+
 		aAdd( aRecord, { "C6_ZPESO "	, nPesoAjuste            	, NIL})
 		aAdd( aRecord, { "C6_ZPESOBT"	, nPesoAjuste            	, NIL})
 

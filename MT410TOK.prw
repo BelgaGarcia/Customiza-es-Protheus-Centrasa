@@ -14,10 +14,16 @@ PE executado na validacao do Pedido de Venda.
 @return logical, lRet - Indica se foi validado
 /*/
 User Function MT410TOK()
-	Local lRet		:= .T.
+	Local lRet						:= .T.
+	Local lValidaPVRefaturamento	:= GetNewPar("FS_LEXCPVR",.F.)  
 
 	//Altera a origem do produto de acordo com a entrada.
 	If FindFunction("faturamento.pedido.u_origemProdutoEntrada")
 		faturamento.pedido.u_origemProdutoEntrada()
 	EndIf
+
+	If ( lValidaPVRefaturamento == .T. ) .And. ( Findfunction("faturamento.pedido.refaturamento.u_validaManutencaoPedido") )
+		lRet := faturamento.pedido.refaturamento.u_validaManutencaoPedido("I")
+	Endif
+
 Return lRet

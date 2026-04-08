@@ -3,6 +3,7 @@
 #include "fwlibversion.ch"
 
 Static oQryFltDoc 	:= NIL as object
+Static oQryIdTrib 	:= NIL as object
 
 //-----------------------------------------------------------------------
 /*/{Protheus.doc} nfseXmlNac
@@ -258,6 +259,15 @@ if !Empty(aNota)
     EndIf
 endif	
 
+    /*/-----------------------------------------------------------------------
+        Destruir os objetos e arrays da classe TSSTCIntegration após o término do loop e montagem do .XML.
+        Não remover, tratamento para cenário que Lote grande com ambientes com Balanciamento de carga.
+        @since 06/01/2026
+        @author Felipe Duarte Luna
+        @version 12.1.2510
+    /*///-----------------------------------------------------------------------
+    DestroyTCI(@oNfTciIntg)
+
 return { cString, cNfe }
 
 //-----------------------------------------------------------------------
@@ -280,6 +290,10 @@ Local nW		:= 0
 Local nX        := 0
 Local nZ		:= 0
 Local aUF     	:= {} 
+Local cTitulo   := ""
+Local cTitPFS   := "" // Título da integração do módulo SIGAPFS x Financeiro
+Local cNatPFS   := "" // Natureza da integração do módulo SIGAPFS x Financeiro
+
 
 //ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
 //³Preenchimento do Array de UF                                            ³
@@ -394,6 +408,7 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
         aadd(aDest,Iif(SA1->(FieldPos("A1_OUTRMUN"))> 0 ,SA1->A1_OUTRMUN,""))	//25							
         aadd(aDest,Iif(SA1->(FieldPos("A1_PFISICA"))> 0 ,SA1->A1_PFISICA,""))	//26
         aadd(aDest,Iif(SA1->(FieldPos("A1_TIPO"))> 0 ,SA1->A1_TIPO,""))	//27
+        aadd(aDest,Iif(SA1->(FieldPos("A1_NIF"))> 0 ,SA1->A1_NIF,""))	//28
                     
         //ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
         //³Posiciona Natureza                                                      ³
@@ -416,7 +431,14 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
             EndIf
             RestArea(aAreaAux)
         Else
-            cNatBusc := NatPCC ( aDest , cNatPCC )
+            If lJescTur .And. FindFunction("JurTitPFS") // Integração com módulo SIGAPFS //12.1.2510
+                cTitPFS  := JurTitPFS(SF2->F2_DOC, SF2->F2_SERIE, @cNatPFS)
+                cTitulo  := cTitPFS
+                cNatBusc := cNatPFS
+            Else
+                cNatBusc := NatPCC ( aDest , cNatPCC )
+            EndIf
+
         EndIf
         DbSelectArea("SED")
         DbSetOrder(1)
@@ -474,6 +496,8 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
         aadd(aDest,"")//Serie para empresa hospitalar utilizar apenas com SF2
         aadd(aDest,"")//A1_OUTRMUN
         aadd(aDest,Iif(SA2->(FieldPos("A2_PFISICA"))> 0 ,SA2->A2_PFISICA,""))//26
+        aadd(aDest,"")	//27
+        aadd(aDest,Iif(SA2->(FieldPos("A2_NIFEX"))> 0 ,SA2->A2_NIFEX,""))	//28
 
         //ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
         //³Posiciona Natureza                                                      ³
@@ -547,7 +571,12 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
     //Query específica para registros do Loja, devido a regras de parametrização
     //o prefixo é gravado diferente entre SE1 e SF2 para a mesma venmda assitida
     //ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
-    If !Empty(SF2->F2_DUPL)			
+
+    If Empty(cTitPFS)
+        cTitulo := SF2->F2_DUPL
+    EndIf
+
+    If !Empty(cTitulo)
                     
         cLJTPNFE := (StrTran(cMV_LJTPNFE," ,"," ','"))+" "
         cWhere := cLJTPNFE
@@ -567,8 +596,8 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
                     FROM %Table:SE1% SE1
                     WHERE
                     SE1.E1_FILIAL = %xFilial:SE1% AND
-                    SE1.E1_PREFIXO = %Exp:SF2->F2_PREFIXO% AND 
-                    SE1.E1_NUM = %Exp:SF2->F2_DUPL% AND 
+                    SE1.E1_PREFIXO = %Exp:SF2->F2_PREFIXO% AND
+                    SE1.E1_NUM = %Exp:cTitulo% AND 
                     ((SE1.E1_TIPO = %Exp:MVNOTAFIS%) OR
                     SE1.E1_TIPO IN (%Exp:cTipoPcc%) OR
                     (SE1.E1_ORIGEM = 'LOJA701' AND SE1.E1_TIPO IN (%Exp:cWhere%))) AND
@@ -582,7 +611,7 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
                     FROM %Table:SE1% SE1
                     WHERE
                     SE1.E1_FILIAL = %xFilial:SE1% AND
-                    SE1.E1_NUM = %Exp:SF2->F2_DUPL% AND 
+                    SE1.E1_NUM = %Exp:cTitulo% AND 
                     ((SE1.E1_TIPO = %Exp:MVNOTAFIS%) OR
                     SE1.E1_TIPO IN (%Exp:cTipoPcc%) OR
                     (SE1.E1_ORIGEM = 'LOJA701' AND SE1.E1_TIPO IN (%Exp:cWhere%))) AND
@@ -594,7 +623,7 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
             DbSeek(xFilial("SE1")+SF2->F2_PREFIXO+SF2->F2_DOC)
         #ENDIF
         
-        While !Eof() .And. xFilial("SE1") == (cAliasSE1)->E1_FILIAL .And.SF2->F2_DUPL == (cAliasSE1)->E1_NUM .AND.;
+        While !Eof() .And. xFilial("SE1") == (cAliasSE1)->E1_FILIAL .And. cTitulo == (cAliasSE1)->E1_NUM .AND.;
             (SF2->F2_PREFIXO == (cAliasSE1)->E1_PREFIXO .Or. !lLJPRF) 
             If 	(cAliasSE1)->E1_TIPO = MVNOTAFIS .OR. ((cAliasSE1)->E1_ORIGEM = 'LOJA701' .AND. (cAliasSE1)->E1_TIPO $ cWhere)
                 If lDuplLiq
@@ -926,6 +955,11 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
         aAdd(aBasPIS,Iif(nRetPis > 0, (cAliasSD2)->D2_BASEPIS, 0))
         nScan := aScan(aRetido,{|x| x[1] == "PIS"})
         If nScan > 0
+            If !oNfTciIntg == Nil
+                If oNfTciIntg:GetTax( cIdTribPiSCof, "PISRET") <> NIL .and. valtype(oNfTciIntg:GetTax( cIdTribPiSCof, "PISRET")["regras_aliquota"]) == "J" .and. !empty(oNfTciIntg:GetAliquotaTax( cIdTribPiSCof, "PISRET")['perc_aliquota'])
+                    aRetido[nScan][4]  := oNfTciIntg:GetAliquotaTax( cIdTribPiSCof, "PISRET")['perc_aliquota']
+                endif
+            endif
             aRetido[nScan][5] := aRetPIS
             aRetido[nScan][6] := aBasPIS
         EndIf
@@ -934,6 +968,11 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
         aAdd(aBasCOF,Iif(nRetCof > 0, (cAliasSD2)->D2_BASECOF, 0))
         nScan := aScan(aRetido,{|x| x[1] == "COFINS"})
         If nScan > 0
+            If !oNfTciIntg == Nil
+                If oNfTciIntg:GetTax( cIdTribPiSCof, "COFRET") <> NIL .and. valtype(oNfTciIntg:GetTax( cIdTribPiSCof, "COFRET")["regras_aliquota"]) == "J" .and. !empty(oNfTciIntg:GetAliquotaTax( cIdTribPiSCof, "COFRET")['perc_aliquota'])
+                    aRetido[nScan][4]  := oNfTciIntg:GetAliquotaTax( cIdTribPiSCof, "COFRET")['perc_aliquota']
+                endif
+            endif
             aRetido[nScan][5] := aRetCOF
             aRetido[nScan][6] := aBasCof
         EndIf
@@ -942,6 +981,11 @@ If DbSeek(xFilial("SF2")+cNota+cSerie+cClieFor+cLoja)
         aAdd(aBasCsll,Iif(nRetCsl > 0, (cAliasSD2)->D2_BASECSL, 0))
         nScan := aScan(aRetido,{|x| x[1] == "CSLL"})
         If nScan > 0
+            If !oNfTciIntg == Nil
+                If oNfTciIntg:GetTax( cIdTribPiSCof, "CSL") <> NIL .and. valtype(oNfTciIntg:GetTax( cIdTribPiSCof, "CSL")["regras_aliquota"]) == "J" .and. !empty(oNfTciIntg:GetAliquotaTax( cIdTribPiSCof, "CSL")['perc_aliquota'])
+                    aRetido[nScan][4]  := oNfTciIntg:GetAliquotaTax( cIdTribPiSCof, "CSL")['perc_aliquota']
+                endif
+            endif
             aRetido[nScan][5] := aRetCSL
             aRetido[nScan][6] := aBasCsll
         EndIf
@@ -2718,7 +2762,6 @@ Static Function tomadorNac( aDest, cCodMun )
     Local cString	:= ""
     Local lSemTomador   := .F.
     Local cPaisIso  := Tsspais(allTrim( aDest[11]) )
-    Local cCpfcnpj  := IIf(len( aDest[1] ) < 14, '<CPF>'+ allTrim( aDest[1] ) +"</CPF>", '<CNPJ>'+ allTrim( aDest[1] ) +"</CNPJ>" )
 	default cCodMun := ""
 
     If Empty(aDest[1]) .and. Empty(aDest[2])
@@ -2728,9 +2771,16 @@ Static Function tomadorNac( aDest, cCodMun )
     If !lSemTomador
 
         cString	+= "<toma>"
-        cString += IIF(len( aDest[1] ) > 0, cCpfcnpj,'')
-        cString	+= IIF( allTrim( aDest[9] ) == "EX",'<NIF>'+  Alltrim(aDest[26]) +"</NIF>",'')
-        //cString	+= '<cNaoNIF>'+ cAmbiente +"</cNaoNIF>"
+        
+        If Len(AllTrim(aDest[1])) == 14
+            cString += "<CNPJ>" + AllTrim(aDest[1]) + "</CNPJ>"
+        ElseIf Len(AllTrim(aDest[1])) == 11
+            cString += "<CPF>" + AllTrim(aDest[1]) + "</CPF>"
+        ElseIf AllTrim(aDest[9]) == "EX" .And. !Empty(AllTrim(aDest[28]))
+            cString += "<NIF>" + AllTrim(aDest[28]) + "</NIF>"
+        ElseIf AllTrim(aDest[9]) == "EX" // Tag cNaoNIF estamos chumbando como 2, acordado com o Ricardo, mas devemos ver com os outros times para buscar o valor de algum campo.
+            cString += "<cNaoNIF>2</cNaoNIF>"  //0 - Não informado na nota de origem; 1 - Dispensado do NIF; 2 - Não exigência do NIF;
+        EndIf
         //cString	+= '<CAEPF>'+ cAmbiente +"</CAEPF>"
         cString	+= IIF( !EMPTY( allTrim( aDest[17] ) ), '<IM>'+ allTrim( aDest[17] ) +"</IM>", "" )    
         cString	+= '<xNome>'+ allTrim( aDest[2] ) +"</xNome>"
@@ -3801,81 +3851,84 @@ static function IbsCbs( aDest, cCodMun, aNota, cClieFor, cLoja, aEntrega )
 
     Private oXmlRefTri := Nil
     Private oXmlIBSCBS := Nil
-    
-    if findClass('totvs.protheus.backoffice.tss.engine.xml.taxinformation')
-        DbSelectArea("SD2")
-        DbSetOrder(3)
-        If DbSeek(xFilial("SD2")+aNota[2]+aNota[1]+cClieFor+cLoja) .and. !empty(SD2->D2_IDTRIB)
-            if oNfTciIntg <> Nil
-                oXmlRefTri 	:= totvs.protheus.backoffice.tss.engine.xml.taxinformation():New("56")
-                cXmlIBSCBS 	:= oXmlRefTri:getXmlIBSCBS(AllTrim(SD2->D2_IDTRIB), oNfTciIntg)
-                oXmlRefTri := FwFreeObj(oXmlRefTri)
-                if !empty(cXmlIBSCBS)
-                    oXmlIBSCBS  := XmlParser("<IBSCBS>"+cXmlIBSCBS+"</IBSCBS>", "_", @cErro, @cAviso)
-                endIf
-            EndIf
-            If type("oXmlIBSCBS") <> "U"
-                cString += "<IBSCBS>"
-                    //Indicador da finalidade da emissão de NFS-e
-                    cString += "<finNFSe>0</finNFSe>"
 
-                    //Indicador da finalidade da emissão de NFS-e:
-                    //0 - NFS-e regular;
-                    If type("aDest[27]")<>"U" .and. aDest[27] == "F"
-                        cString += "<indFinal>1</indFinal>"
-                    Else
-                        cString += "<indFinal>0</indFinal>"
-                    EndIf
-
-                    //Código indicador da operação de fornecimento, conforme tabela "código indicador de operação"
-                    IF TYPE("oXmlIBSCBS:_IBSCBS:_CINDOP")<>"U" .AND. !EMPTY(oXmlIBSCBS:_IBSCBS:_CINDOP:TEXT)
-                        cString += "<cIndOp>"+oXmlIBSCBS:_IBSCBS:_CINDOP:TEXT+"</cIndOp>"
-                    ENDIF
-                    
-                    //"Código do tipo de Operação (tpOper) não pode ser informado quando não se tratar de uma compra governamental
-                    // ou um dos serviços da LC 116/2003 listados: 25.05; 15.09; 17.12; 10.05."
-                    If lUsaSF3 .and. type("aRetSF3[1][3]") <>"U" .and. (SubStr(allTrim(aRetSF3[1][3]),1,4) $ "2505-1509-1712-1005" .OR. ADEST[22] == 'EP')
-                        cString += "<tpOper>1</tpOper>" // De onde buscar ? campo opcional
-                    Elseif !lUsaSF3 .and.  type("aProd[1][32]") <> "U" .and. (SubStr(allTrim(aProd[1][32]),1,4) $ "2505-1509-1712-1005" .OR. ADEST[22] == 'EP')
-                        cString += "<tpOper>1</tpOper>" // De onde buscar ? campo opcional
-                    Endif
-
-                    // De onde buscar se NFSE hoje não tem processo de referenciação campo opcional.
-                    //cString   += '<gRefNFSe>'
-                        //cString   += '<refNFSe>'+  +"</refNFSe>"
-                    //cString   += '</gRefNFSe>'
-
-                    //Tipo de ente governamental Para administração pública direta e suas autarquias e fundações: 1 - União; 2 - Estado; 3 - Distrito Federal; 4 - Município;
-                    IF ADEST[22] == "EP"
-                        cString += "<tpEnteGov>1</tpEnteGov>" //Nao existe no Protheus
-                    ENDIF 
-
-                    //A respeito do Destinatário dos serviços: 0 – o destinatário é o próprio tomador/adquirente identificado na NFS-e (tomador = adquirente = destinatário);
-                    // 1 – o destinatário não é o próprio adquirente, podendo ser outra pessoa, física ou jurídica (ou equiparada), ou um estabelecimento diferente do indicado como tomador (tomador = adquirente ? destinatário)
-                    If !Empty(aEntrega) .and. aEntrega[1] <> aDest[1]
-                        cString += "<indDest>1</indDest>"
-                    Else
-                        cString += "<indDest>0</indDest>"
-                    EndIf
-                    
-                    // <dest> O destinatário só deve ser identificado quando indDest for 1.	
-                    If !Empty(aEntrega) .and. aEntrega[1] <> aDest[1]
-                        cString += IbsCbsDest(aDest, cCodMun)
-                    EndIf
-                    
-                    // bloco Valores
-                    if type("oXmlIBSCBS") <> "U"
-                        cString += IbsCbsValo(oXmlIBSCBS)
-                    Endif 
-                cString += "</IBSCBS>"
-                
-                oXmlIBSCBS := FwFreeObj(oXmlIBSCBS)
-            Endif
+	cDocumentItemId := GetTribID( SF2->F2_DOC, SF2->F2_SERIE, SF2->F2_CLIENTE, SF2->F2_LOJA)
+    DbSelectArea("SD2")
+    DbSetOrder(3)
+    If !Empty(cDocumentItemId) .And. findClass('totvs.protheus.backoffice.tss.engine.xml.taxinformation') .And. DbSeek(xFilial("SD2")+aNota[2]+aNota[1]+cClieFor+cLoja)
+        if oNfTciIntg <> Nil
+            oXmlRefTri 	:= totvs.protheus.backoffice.tss.engine.xml.taxinformation():New("56")
+            cXmlIBSCBS 	:= oXmlRefTri:getXmlIBSCBS(AllTrim(cDocumentItemId), oNfTciIntg)
+            oXmlRefTri := FwFreeObj(oXmlRefTri)
+            if !empty(cXmlIBSCBS)
+                oXmlIBSCBS  := XmlParser("<IBSCBS>"+cXmlIBSCBS+"</IBSCBS>", "_", @cErro, @cAviso)
+            endIf
         EndIf
-    endIf
+        If type("oXmlIBSCBS") <> "U"
+            cString += "<IBSCBS>"
+                //Indicador da finalidade da emissão de NFS-e
+                cString += "<finNFSe>0</finNFSe>"
+
+                //Indicador da finalidade da emissão de NFS-e:
+                //0 - NFS-e regular;
+                If type("aDest[27]")<>"U" .and. aDest[27] == "F"
+                    cString += "<indFinal>1</indFinal>"
+                Else
+                    cString += "<indFinal>0</indFinal>"
+                EndIf
+
+                //Código indicador da operação de fornecimento, conforme tabela "código indicador de operação"
+                IF TYPE("oXmlIBSCBS:_IBSCBS:_CINDOP")<>"U" .AND. !EMPTY(oXmlIBSCBS:_IBSCBS:_CINDOP:TEXT)
+                    cString += "<cIndOp>"+oXmlIBSCBS:_IBSCBS:_CINDOP:TEXT+"</cIndOp>"
+                ENDIF
+                
+                //"Código do tipo de Operação (tpOper) não pode ser informado quando não se tratar de uma compra governamental
+                // ou um dos serviços da LC 116/2003 listados: 25.05; 15.09; 17.12; 10.05."
+                If lUsaSF3 .and. type("aRetSF3[1][3]") <>"U" .and. (SubStr(allTrim(aRetSF3[1][3]),1,4) $ "2505-1509-1712-1005" .OR. ADEST[22] == 'EP')
+                    cString += "<tpOper>1</tpOper>" // De onde buscar ? campo opcional
+                Elseif !lUsaSF3 .and.  type("aProd[1][32]") <> "U" .and. (SubStr(allTrim(aProd[1][32]),1,4) $ "2505-1509-1712-1005" .OR. ADEST[22] == 'EP')
+                    cString += "<tpOper>1</tpOper>" // De onde buscar ? campo opcional
+                Endif
+
+                // De onde buscar se NFSE hoje não tem processo de referenciação campo opcional.
+                //cString   += '<gRefNFSe>'
+                    //cString   += '<refNFSe>'+  +"</refNFSe>"
+                //cString   += '</gRefNFSe>'
+
+                //Tipo de ente governamental Para administração pública direta e suas autarquias e fundações: 1 - União; 2 - Estado; 3 - Distrito Federal; 4 - Município;
+                IF ADEST[22] == "EP"
+                    cString += "<tpEnteGov>1</tpEnteGov>" //Nao existe no Protheus
+                ENDIF 
+
+                //A respeito do Destinatário dos serviços: 0 – o destinatário é o próprio tomador/adquirente identificado na NFS-e (tomador = adquirente = destinatário);
+                // 1 – o destinatário não é o próprio adquirente, podendo ser outra pessoa, física ou jurídica (ou equiparada), ou um estabelecimento diferente do indicado como tomador (tomador = adquirente ? destinatário)
+                If !Empty(aEntrega) .and. aEntrega[1] <> aDest[1]
+                    cString += "<indDest>1</indDest>"
+                Else
+                    cString += "<indDest>0</indDest>"
+                EndIf
+                
+                // <dest> O destinatário só deve ser identificado quando indDest for 1.	
+                If !Empty(aEntrega) .and. aEntrega[1] <> aDest[1]
+                    cString += IbsCbsDest(aDest, cCodMun)
+                EndIf
+                
+                // bloco Valores
+                if type("oXmlIBSCBS") <> "U"
+                    cString += IbsCbsValo(oXmlIBSCBS)
+                Endif 
+            cString += "</IBSCBS>"
+            
+            oXmlIBSCBS := FwFreeObj(oXmlIBSCBS)
+        Endif
+    EndIf
 
     RestArea(aArea)
     aArea := aSize(aArea,0)
+	oXmlIBSCBS := Nil
+	oXmlRefTri := Nil
+	FwFreeObj(oXmlIBSCBS)
+    FwFreeObj(oXmlRefTri)
 
 return cString
 
@@ -3906,10 +3959,10 @@ Static Function IbsCbsDest(aDest, cCodMun)
                 cString += "<CNPJ>" + AllTrim(aDest[1]) + "</CNPJ>"
             ElseIf Len(AllTrim(aDest[1])) == 11
                 cString += "<CPF>" + AllTrim(aDest[1]) + "</CPF>"
-            ElseIf AllTrim(aDest[9]) == "EX" .And. !Empty(AllTrim(aDest[26]))
-                cString += "<NIF>" + AllTrim(aDest[26]) + "</NIF>"
+            ElseIf AllTrim(aDest[9]) == "EX" .And. !Empty(AllTrim(aDest[28]))
+                cString += "<NIF>" + AllTrim(aDest[28]) + "</NIF>"
             ElseIf AllTrim(aDest[9]) == "EX"
-                cString += "<cNaoNIF>0</cNaoNIF>"  //0 - Não informado na nota de origem; 1 - Dispensado do NIF; 2 - Não exigência do NIF;
+                cString += "<cNaoNIF>2</cNaoNIF>"  //0 - Não informado na nota de origem; 1 - Dispensado do NIF; 2 - Não exigência do NIF;
             EndIf
             
             cString += "<xNome>" + AllTrim(aDest[2]) + "</xNome>"
@@ -4009,3 +4062,62 @@ Static Function IbsCbsValo(oXmlIBSCBS)
     cString += "</valores>"
 
 Return cString
+
+//-----------------------------------------------------------------------
+/*/{Protheus.doc}  GetTribID
+    Função responsavel pela busca do primeiro Item da Nota que foi escriturado pelo Configurador de Tributos(FISA170).
+    Campo D2_IDTRIB da tabela SD2 preenchido.
+
+    @param cFilial  Character, Filial da Nota Fiscal.
+    @param cDoc     Character, Documento da Nota Fiscal.
+    @param cSerie   Character, Série da Nota Fiscal.
+    @param cClie    Character, Cliente/Fornecedor da Nota Fiscal.
+    @param cLoja    Character, Loja do Cliente/Fornecedor da Nota Fiscal.
+    
+    @return Character, Retorna o ID_TRIB do primeiro item encontrado.
+
+    @author Felipe Duarte Luna
+    @since 06.01.2026
+    @version 12.1.2510
+/*///-----------------------------------------------------------------------
+Static Function GetTribID( cDoc, cSerie, cCliente, cLoja )
+Local cQuery	 := ""
+Local cAliasSD2  := "SD2"
+Local cIdTrib    := ""
+
+//Default cFilial	:= ""
+Default cDoc	:= ""
+Default cSerie	:= ""
+Default cCliente:= ""
+Default cLoja	:= ""
+
+If oQryIdTrib == Nil
+    cQuery += "SELECT D2_FILIAL,D2_SERIE,D2_DOC,D2_CLIENTE,D2_LOJA,D2_COD,D2_TES,D2_TIPO,D2_ITEM,D2_CF, "
+    cQuery += "D2_IDTRIB  FROM " + RetSqlName('SD2') + " SD2 "
+    cQuery += "WHERE SD2.D2_FILIAL= ? AND SD2.D2_DOC = ? AND SD2.D2_SERIE = ? AND SD2.D2_CLIENTE = ? AND SD2.D2_LOJA = ? AND SD2.D_E_L_E_T_ = ? "
+    cQuery += "ORDER BY D2_FILIAL, D2_DOC, D2_SERIE, D2_CLIENTE, D2_LOJA, D2_COD, D2_ITEM"
+
+    oQryIdTrib	:= FwExecStatement():New(ChangeQuery(cQuery))
+EndIf
+
+oQryIdTrib:SetString(1, xFilial("SD2") )
+oQryIdTrib:SetString(2, cDoc)
+oQryIdTrib:SetString(3, cSerie)
+oQryIdTrib:SetString(4, cCliente)
+oQryIdTrib:SetString(5, cLoja)
+oQryIdTrib:SetString(6,Space(1))
+cAliasSD2 := oQryIdTrib:OpenAlias()
+cQuery    := oQryIdTrib:getFixQuery()
+
+While (cAliasSD2)->(!eof())
+    //
+    If !Empty((cAliasSD2)->D2_IDTRIB)
+        cIdTrib := (cAliasSD2)->D2_IDTRIB
+        Exit
+    EndIf
+    (cAliasSD2)->(DbSkip())
+Enddo
+
+(cAliasSD2)->( DbCloseArea() ) 
+
+Return cIdTrib

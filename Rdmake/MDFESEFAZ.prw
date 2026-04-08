@@ -1342,7 +1342,7 @@ if len(aValPed) > 0
 			cString += "<disp>"
 				cCgc := allTrim(aValPed[nI,1])
 				cString += "<CNPJForn>" + replic("0",14-len(cCgc)) + cCgc  + "</CNPJForn>" //CNPJ da empresa fornecedora do Vale-Pedágio
-				if !Empty(aValPed[nI,2])
+				if !Empty(aValPed[nI,2]) .and. val(aValPed[nI,2]) > 0
 					cCgc := StrTran(StrTran(StrTran(alltrim(aValPed[nI,2]),"."),"/"),"-")
 					if len(cCgc) < 14
 						cString += "<CPFPg>" +  replic("0",11-len(cCgc)) + cCgc + "</CPFPg>" //CPF do responsável pelo pagamento do Vale-Pedágio

@@ -36,6 +36,7 @@ User Function GerarTransferencia(cDocTransferencia)
 	Local cProduto		    := ""	as character
 	Local cLocal		    := ""	as character
 	Local cLote			    := ""	as character
+	Local cTes				:= ""	as character
 	Local aErrosLog		    := {}	as array
 	Local nRegLog		    := 0	as numeric
 
@@ -64,7 +65,11 @@ User Function GerarTransferencia(cDocTransferencia)
 
 		lContinua := .F.
 
-		If SF4->(dbSeek(FWxFilial("SF4")+(cAliasTmpAjuste)->FS_PRODUTO)) .And. ( SF4->F4_ESTOQUE == "S") .And. ( SF4->F4_PODER3 == "N")
+		(cAliasSD1)->(dbSeek( (cAliasTmpAjuste)->FS_ITEM))
+
+		cTes := (cAliasSD1)->FS_TES
+
+		If SF4->(dbSeek(FWxFilial("SF4")+cTes)) .And. ( SF4->F4_ESTOQUE == "S") .And. ( SF4->F4_PODER3 == "N")
 			lContinua := .T.
 		Endif
 
@@ -87,9 +92,7 @@ User Function GerarTransferencia(cDocTransferencia)
 				cProduto 	:= (cAliasTmpAjuste)->FS_PRODUTO
 				cLocal		:= (cAliasTmpAjuste)->FS_LOCAL
 				cLote		:= (cAliasTmpAjuste)->FS_LOTECTL
-
-				(cAliasSD1)->(dbSeek( (cAliasTmpAjuste)->FS_ITEM))
-				
+							
 				SB1->(dbSeek(FWxFilial("SB1")+(cAliasSD1)->FS_PRODUTO))
 	
 				aAdd(aLinha,{"ITEM"			, cItem							,Nil})

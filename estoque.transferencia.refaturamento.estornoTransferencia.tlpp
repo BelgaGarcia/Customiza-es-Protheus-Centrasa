@@ -28,8 +28,6 @@ User Function EstornoTransferencia(cDocTrasnferencia)
 	Local cMsgErro			:= ""	as character
 	Local aErrosLog			:= {}	as array
 	Local nRegLog			:= 0	as numeric
-	Local nPosProduto		:= 0	as numeric
-	Local aProdutos			:= {}	as array
 
 	Private lMsErroAuto 	:= .F.	as logical
 	Private lMsHelpAuto    	:= .T.	as logical
@@ -45,6 +43,7 @@ User Function EstornoTransferencia(cDocTrasnferencia)
 	SZ8->(dbSetOrder(1))
 
 	If SZ8->(dbSeek(FWxFilial("SZ8")+cNumProcesso))
+
 		While (!SZ8->(eof())) .And. ( SZ8->Z8_FILIAL == FWxFilial("SZ8") ) .And. ( SZ8->Z8_NUM == cNumProcesso)
 
 			aAutoCab 		:= {}
@@ -54,9 +53,8 @@ User Function EstornoTransferencia(cDocTrasnferencia)
 			cProduto		:= SZ8->Z8_PRODUTO
 			cDocumento		:= cDocTrasnferencia
 			cLote			:= SZ8->Z8_LOTECTL//DES
-			nPosProduto		:= aScan(aProdutos,cProduto)
 
-			If !( SZ8->Z8_QUANT == 0 ) .And. ( nPosProduto == 0)
+			If !( SZ8->Z8_QUANT == 0 ) .And. !Empty( cLote)
 
 				nRecnoSD3 := getCabEstorno(cProduto,cDocumento,cLote)
 
@@ -95,6 +93,7 @@ User Function EstornoTransferencia(cDocTrasnferencia)
 					cMsgErro += "Lote...............: "+cLote+ CRLF+ CRLF
 					cMsgErro += "Registro de transferencia não encontrado"+ CRLF
 					aAdd(aLogErro,{3,cMsgErro,"Erro ao estornar transferencia.",cNotaFiscal,cSerieNota,cCodFornecedor,cLojFornecedor})
+					lRet := .F.
 					Exit
 				Endif
 			Endif

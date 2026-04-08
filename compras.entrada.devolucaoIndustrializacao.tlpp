@@ -98,6 +98,9 @@ Static Function geraDocumentoEntrada()
 	aAdd( aCabDocumento, { "F1_EST"	   , SA1->A1_EST				, Nil } )
 	aAdd( aCabDocumento, { "F1_COND"   , cCondPagamento				, Nil } )
 
+	DbSelectArea("SB1")
+	SB1->(DbSetOrder(1))
+	
 	dbSelectArea("SD2")
 	SD2->(dbSetOrder(3))
 
@@ -107,10 +110,12 @@ Static Function geraDocumentoEntrada()
 
 			aLinha := {}
 
+			SB1->(DbSeek(FwxFilial("SB1")+SD2->D2_COD))
+
 			nQuantidade 	:= SD2->D2_QUANT - SD2->D2_QTDEDEV
 			nTotalItem		:= Round(nQuantidade * SD2->D2_PRCVEN, 2)
 			cMsgQuantidade	:= ""
-			nPesoItem		:= getPesoItemPedido(SD2->D2_PEDIDO,SD2->D2_ITEMPV)
+			nPesoItem		:= IIF(SB1->B1_TIPO == "MP", nQuantidade, getPesoItemPedido(SD2->D2_PEDIDO,SD2->D2_ITEMPV))
 
 			If !( nQuantidade > 0 )
 				cMsgQuantidade := "Quantidade do Item invalido."+CRLF

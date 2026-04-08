@@ -29,6 +29,7 @@ Static Function buscarProdutoXCliente()
 	Local cQuery		:= ""	as character
 	Local cAlias
 	Local nPosicaoArray	:= 0	as integer
+	Local cTESRetorno	:= AllTrim(GetNewPar("FS_TESRET", ""))
 
 	For nPosicaoArray := 1 To Len(aRetorno[1])
 		cQuery := 	queryProdutoXCliente(nPosicaoArray)
@@ -47,11 +48,18 @@ Static Function buscarProdutoXCliente()
 				EndIf
 
 				If (cAlias)->C6_ZQTDNFE > 0
-					aRetorno[1][nPosicaoArray][09]	:= (cAlias)->C6_ZQTDNFE //qCom
+					If (cAlias)->C6_TES $ cTESRetorno
+						If (cAlias)->C6_ZQTDNFE <> (cAlias)->C6_QTDVEN
+							aRetorno[1][nPosicaoArray][09]	:= ( (cAlias)->C6_ZQTDNFE / (cAlias)->C6_QTDVEN ) * aRetorno[1][nPosicaoArray][09] //qCom
+						EndIf
+					Else
+						aRetorno[1][nPosicaoArray][09]	:= (cAlias)->C6_ZQTDNFE //qCom
+					EndIf
 				EndIf
 
 				If (cAlias)->C6_ZVLRNFE > 0
 					aRetorno[1][nPosicaoArray][16]	:= (cAlias)->C6_ZVLRNFE //vUnCom
+					aRetorno[1][nPosicaoArray][10]	:= aRetorno[1][nPosicaoArray][9] * aRetorno[1][nPosicaoArray][16] //vProd
 				EndIf
 
 				If !Empty((cAlias)->A7_CODCLI)
@@ -76,10 +84,19 @@ Static Function queryProdutoXCliente(nPosicaoArray)
 	cQuery += "        ,A7_ZVLRUN "	+ CRLF
 	cQuery += "        ,CASE WHEN Z6_FATOR IS NOT NULL THEN Z6_FATOR ELSE A7_ZCONV END AS FATOR_CONVERSAO "	+ CRLF
 	cQuery += "        ,CASE WHEN Z6_TIPO IS NOT NULL THEN Z6_TIPO ELSE A7_ZTPCONV END AS TIPO_CONVERSAO "	+ CRLF
-	cQuery += "        ,C6_ZPESO "	+ CRLF
 	cQuery += "        ,C6_ZUMNFE "	+ CRLF
-	cQuery += "        ,C6_ZQTDNFE "	+ CRLF
 	cQuery += "        ,C6_ZVLRNFE "	+ CRLF
+	cQuery += "        ,C6_TES "	+ CRLF
+	
+	If !Empty(aRetorno[1][nPosicaoArray][39])
+		cQuery += "        ,C6_ZPESO "	+ CRLF
+		cQuery += "        ,C6_ZQTDNFE "	+ CRLF
+		cQuery += "        ,C6_QTDVEN "	+ CRLF
+	Else
+		cQuery += "        ,SUM(C6_ZPESO) C6_ZPESO "	+ CRLF
+		cQuery += "        ,SUM(C6_ZQTDNFE) C6_ZQTDNFE "	+ CRLF
+		cQuery += "        ,SUM(C6_QTDVEN) C6_QTDVEN "	+ CRLF
+	EndIf
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SA7") + CRLF
@@ -90,7 +107,14 @@ Static Function queryProdutoXCliente(nPosicaoArray)
 	cQuery += "     	1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
 	cQuery += " 	    AND C6_NUM		= '"+aRetorno[1][nPosicaoArray][38]+"' " + CRLF
-	cQuery += " 	    AND C6_ITEM		= '"+aRetorno[1][nPosicaoArray][39]+"' " + CRLF
+	cQuery += " 	    AND C6_PRODUTO	= A7_PRODUTO " + CRLF
+	cQuery += " 	    AND C6_NOTA		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 	    AND C6_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	
+	If !Empty(aRetorno[1][nPosicaoArray][39])
+		cQuery += " 	    AND C6_ITEM		= '"+aRetorno[1][nPosicaoArray][39]+"' " + CRLF
+	EndIf
+	
 	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
 
 	cQuery += " LEFT JOIN " + CRLF
@@ -110,4 +134,8 @@ Static Function queryProdutoXCliente(nPosicaoArray)
 	cQuery += " 		AND A7_PRODUTO	= '"+aRetorno[1][nPosicaoArray][2]+"' " + CRLF
 	cQuery += " 		AND A7_UMNFE	= '2' " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SA7") + CRLF
+
+	If Empty(aRetorno[1][nPosicaoArray][39])
+		cQuery += " GROUP BY A7_ZUMNFE, A7_CODCLI, A7_ZVLRUN, Z6_FATOR, A7_ZCONV, Z6_TIPO, A7_ZTPCONV, C6_ZUMNFE, C6_ZVLRNFE, C6_TES "
+	EndIf
 Return cQuery

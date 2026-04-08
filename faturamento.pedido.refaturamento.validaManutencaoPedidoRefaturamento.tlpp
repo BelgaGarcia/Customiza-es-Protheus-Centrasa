@@ -11,29 +11,118 @@ Validar se pedido de venda pode ser excluido,alterado ou copia, caso seja gerada
 @since 09/12/2025
 @version P12
 @database ORACLE
+
+@param cOpcao, chacaracter , Se a chamada da linha foi bloqueas inclusao de linha
+
 /*/
-User Function ValidaManutencaoPedido()
-	Local lRet  := .T.  as logical
+User Function ValidaManutencaoPedido(cOpcao)
+	Local lRet  			:= .T.  as logical
+	Local lVldQuantidade	:= .F.	as logical
+	Local cLinha			:= "" 	as character
 
 	Default lExluirPVRefaturamento	:= .F.
+	Default cOpcao					:= ""
 
-	If !( lExluirPVRefaturamento == .T. )
-	
-		dbSelectArea("SZ7")
-		SZ7->(dbSetOrder(5))
+	If podeExecutar()
 
-		If ( SZ7->(dbSeek(FWxFilial("SZ7")+SC5->C5_NUM)) ) .And. ( SZ7->Z7_STATUS == "2")
-
-			If ( ALTERA == .T. )
-				FWAlertWarning("Pedido Venda não pode ser Alterado."+CRLF+"Gerado pelo processo de refaturamento.","Estorno de Transferência")
-			ElseIf !( INCLUI ) .And. !( ALTERA )
-				FWAlertWarning("Pedido Venda não pode ser Excluido."+CRLF+"Gerado pelo processo de refaturamento.","Estorno de Transferência")
-			ElseIf INCLUI .And. IsInCallStack("A410COPIA")
-				FWAlertWarning("Pedido Venda não pode ser copiado."+CRLF+"Gerado pelo processo de refaturamento.","Estorno de Transferência")
+		If ( cOpcao == "E" )
+			If Type("lExecutouExlcusao") == "U"
+				Public lExecutouExlcusao := .F.
+			Else
+				lExecutouExlcusao := .T.
 			Endif
+		Endif
 
-			lRet := .F.
+		If !( lExluirPVRefaturamento == .T. )
+
+			dbSelectArea("SZ7")
+			SZ7->(dbSetOrder(5))
+
+			If ( SZ7->(dbSeek(FWxFilial("SZ7")+SC5->C5_NUM)) ) .And. ( SZ7->Z7_STATUS == "2")
+				If ( cOpcao == "I" )
+					lRet := validarNovoItemQuantidade(@lVldQuantidade,@cLinha)
+					If ( lRet == .F.)
+						If ( lVldQuantidade == .T. )
+							FWAlertWarning("Não é permitido alterar quantidade item pedido venda (Linha: '"+cLinha+"')."+CRLF+"Gerado pelo processo de refaturamento.","Manutenção de Pedido")
+						Else
+							FWAlertWarning("Não é permitido incluir nova linha no pedido Venda."+CRLF+"Gerado pelo processo de refaturamento.","Manutenção de Pedido")
+						Endif
+					Endif
+				ElseIf ( cOpcao == "E" ) .And. !( lExecutouExlcusao == .T.)
+					FWAlertWarning("Não é permitido excluir linha pedido Venda."+CRLF+"Gerado pelo processo de refaturamento.","Manutenção de Pedido")
+					lRet := .F.
+				ElseIf !( INCLUI ) .And. !( ALTERA )
+					FWAlertWarning("Pedido Venda não pode ser Excluido."+CRLF+"Gerado pelo processo de refaturamento.","Manutenção de Pedido")
+					lRet := .F.
+				ElseIf INCLUI .And. IsInCallStack("A410COPIA")
+					FWAlertWarning("Pedido Venda não pode ser copiado."+CRLF+"Gerado pelo processo de refaturamento.","Pedido não pode ser copiado")
+					lRet := .F.
+				Endif
+
+			Endif
 		Endif
 	Endif
+
+Return lRet
+
+/*/
+	Verificar se houve inclusão de novo item
+	Refaturmamento não é permitido
+/*/
+Static Function validarNovoItemQuantidade(lVldQuantidade,cLinha)
+	Local lRet				:= .T.	as logical
+	Local nRecord			:= 0	as numeric
+	Local nQuantidadePV		:= 0	as numeric
+	Local cNumeroPV			:= ""	as character
+	Local cItemPV			:= ""	as character
+	Local cProdutoPV		:= ""	as character
+	Local aAreaSC6			:= {}	as array
+
+	Default lVldQuantidade	:= .F.
+	Default cLinha			:= ""
+
+	aAreaSC6	:= SC6->(GetArea())
+	cNumeroPV 	:= SC5->C5_NUM
+
+	dbSelectArea("SC6")
+	SC6->(dbSetOrder(1))
+
+	For nRecord := 1 To Len(aCols)
+		cItemPV 		:= GDFieldGet("C6_ITEM",nRecord)
+		cProdutoPV		:= GDFieldGet("C6_PRODUTO",nRecord)
+		nQuantidadePV	:= GDFieldGet("C6_QTDVEN ",nRecord)
+
+		lVldQuantidade	:= .F.
+
+		If !( SC6->(dbSeek(FWxFilial("SC6")+cNumeroPV+cItemPV+cProdutoPV)))
+			lRet := .F.
+			Exit
+		ElseIf ( nQuantidadePV <> SC6->C6_QTDVEN )
+			lRet 			:= .F.
+			lVldQuantidade	:= .T.
+			cLinha			:= Alltrim(Str(nRecord))
+			Exit
+		Endif
+	Next
+
+	RestArea(aAreaSC6)
+
+Return lRet
+
+/*/
+	Verifica se pode executar
+/*/ 
+Static Function podeExecutar()
+	Local lRet	:= .F.	as logical
+
+	Begin Sequence
+
+		If FWIsInCallStack("compras.entrada.refaturamento.u_gerarRefaturamento")
+			Break
+		Endif
+
+		lRet := .T.
+
+	End Sequence
 
 Return lRet

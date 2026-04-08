@@ -184,6 +184,8 @@ Static Function carregaItensNotaGrid()
 	aCamposSX3 := FWTamSX3("D1_SERIE")
 	aAdd( aFields,	{"FS_SERIE"	    , aCamposSX3[3]	, aCamposSX3[1], aCamposSX3[2]}	)
 
+	aCamposSX3 := FWTamSX3("D1_TES")
+	aAdd( aFields,	{"FS_TES"	    , aCamposSX3[3]	, aCamposSX3[1], aCamposSX3[2]}	)
 
 	oTabelaTmpSd1:SetFields( aFields )
 	oTabelaTmpSd1:AddIndex("1", {"FS_ITEM","FS_PRODUTO"} )
@@ -226,6 +228,7 @@ Static Function carregaItensNotaGrid()
 				(cAliasSD1)->FS_NUMSEQ	:= SD1->D1_NUMSEQ
 				(cAliasSD1)->FS_DOC		:= SD1->D1_DOC
 				(cAliasSD1)->FS_SERIE	:= SD1->D1_SERIE
+				(cAliasSD1)->FS_TES		:= SD1->D1_TES
 
 				(cAliasSD1)->(MsUnlock())
 
@@ -289,6 +292,9 @@ Static Function montaHeadNota()
 
 	aCamposSX3 := FWTamSX3("D1_SERIE")
 	aAdd( aHeaderItens,	{"FS_SERIE"    ,"Serie",aCamposSX3[3]	,aCamposSX3[1]	, aCamposSX3[2]	,""}	)
+
+	aCamposSX3 := FWTamSX3("D1_TES")
+	aAdd( aHeaderItens,	{"FS_TES"    ,"Tes",aCamposSX3[3]	,aCamposSX3[1]	, aCamposSX3[2]	,""}	)
 
 	For nRecord := 1 To Len(aHeaderItens)
 		oColumn := FWBrwColumn():New()
@@ -465,7 +471,7 @@ Static Function criarGerids()
 	aAdd( aHeaderAjuste,	{"Vlr.Unitario"  ,"FS_VUNIT"	,X3Picture("D1_VUNIT")	    ,aCamposSX3[1]    ,aCamposSX3[2],"","","N","",""}	)
 
 	aCamposSX3 := FWTamSX3("D1_PESO")
-	aAdd( aHeaderAjuste,	{"Peso"         ,"FS_PESO"	    ,X3Picture("D1_PESO")	,aCamposSX3[1]    ,aCamposSX3[2],'compras.entrada.refaturamento.u_validarPeso()',"","N","",""}	)
+	aAdd( aHeaderAjuste,	{"Peso"         ,"FS_PESO"	    ,X3Picture("D1_PESO")	,aCamposSX3[1]    ,aCamposSX3[2],"","","N","",""}	)
 
 	aCamposSX3 := FWTamSX3("D1_LOTECTL")
 	aAdd( aHeaderAjuste,	{"Lote"         ,"FS_LOTECTL"	,"@!"	                ,aCamposSX3[1]    ,0            ,'compras.entrada.refaturamento.u_validarLote()',"","C","",""}	)
@@ -799,9 +805,6 @@ User Function validarLinhaAjuste()
 			FWAlertWarning("Campo 'Quantidade' é obrigatótio.",cTitulo)
 			lRet := .F.
 
-		Case !( verificarPesoAjuste("S") )
-			lRet := .F.
-
 		EndCase
 
 	Endif
@@ -909,45 +912,6 @@ User Function validarArmazem()
 	RestArea(aAreaSD1)
 
 Return lRet
-
-/*/
-	Validar Peso
-/*/
-User Function validarPeso()
-	Local lRet			:= .T.	as logical
-	Local nLinha		:= 0	as numeric
-	Local aAreaSD1		:= {}	as array
-	Local cCodProduto	:= ""	as character
-	Local cItem			:= ""	as character
-	Local nPeso 		:= 0	as numeric
-
-	aAreaSD1 	:= (cAliasSD1)->(getArea())
-	nLinha 		:= oGridAjusteItens:NAT
-
-	If ( oGridAjusteItens:aCols[nLinha,POS_DELELTE_AJUSTE] == .F. )
-
-		cCodProduto	:= oGridAjusteItens:aCols[nLinha,POS_COD_AJUSTE]
-		cItem		:= oGridAjusteItens:aCols[nLinha,POS_ITEM_AJUSTE]
-
-		(cAliasSD1)->(dbSetOrder(1))
-
-		If (cAliasSD1)->(dbSeek(cItem + cCodProduto))
-
-			nPeso := (cAliasSD1)->FS_PESO
-
-			If ( M->FS_PESO > nPeso )
-				FWAlertWarning("Peso do ajuste não pode ser maior que documento.",cTitulo)
-				lRet := .F.
-			Endif
-
-		Endif
-
-	Endif
-
-	RestArea(aAreaSD1)
-
-Return lRet
-
 
 /*/
 	Validar Lote Item
@@ -1414,13 +1378,19 @@ Static Function podeExecutar()
 
 	Begin Sequence
 
-		If !( SF1->F1_FORMUL == "S")
-			FWAlertWarning("Nota fiscal não é formulario proprio.",cTitulo)
-			Break
-		Endif
+		dbSelectArea("SZ7")
+		SZ7->(dbSetOrder(2))
 
-		If !verificarItensDocumeto()
-			Break
+		If !( SZ7->(dbSeek(FWxFilial("SZ7")+cNotaFiscal+cSerieNota+cCodFornecedor+cLojFornecedor)))
+
+			If !( SF1->F1_FORMUL == "S")
+				FWAlertWarning("Nota fiscal não é formulario proprio.",cTitulo)
+				Break
+			Endif
+
+			If !verificarItensDocumeto()
+				Break
+			Endif
 		Endif
 
 		lRet := .T.
@@ -1438,6 +1408,7 @@ Static Function verificarItensDocumeto()
 	Local nQtdRegistro	:= 0	as numeric
 	Local nSaldoItem	:= 0	as numeric
 	Local cFiltro   	:= ""   as character
+	Local cTesRefItem	:= ""   as character
 
 	cTesRefatura	:= GetNewPar("FS_TESREFT","001")
 	cFiltro     	:= cNotaFiscal+cSerieNota+cCodFornecedor+cLojFornecedor
@@ -1475,7 +1446,10 @@ Static Function verificarItensDocumeto()
 				Endif
 
 				nQtdRegistro ++
-
+			Else
+				If !( SD1->D1_TES $ cTesRefItem )
+					cTesRefItem := cTesRefItem + SD1->D1_TES + CRLF
+				Endif
 			EndIf
 
 			SD1->(dbSkip())
@@ -1486,7 +1460,11 @@ Static Function verificarItensDocumeto()
 	Endif
 
 	If ( nQtdRegistro == 0 ) .And. ( lRet == .T.)
-		FWAlertWarning("Nenhum item encontrado",cTitulo)
+		If !Empty(cTesRefItem)
+			FWAlertWarning("Nenhum item encontrado"+CRLF+"TES não existe no parametro 'FS_TESREFT'"+CRLF+cTesRefItem,cTitulo)
+		Else
+			FWAlertWarning("Nenhum item encontrado",cTitulo)
+		Endif
 		lRet := .F.
 	Endif
 
@@ -1668,10 +1646,6 @@ Return lRet
 /*/
 Static Function verificarPesoAjuste(cOpcao)
 	Local lRet				:= .T.	as logical
-	Local cCodProduto		:= ""	as character
-	Local cCodProdutoajuste	:= ""	as character
-	Local cItemAjuste		:= ""	as character
-	Local cItemDocumento	:= ""	as character
 	Local nPesoDocumento	:= 0	as numeric
 	Local nPesoAjuste		:= 0	as numeric
 	Local nRecord			:= 0	as numeric
@@ -1687,48 +1661,40 @@ Static Function verificarPesoAjuste(cOpcao)
 	(cAliasSD1)->(dbGotop())
 	While !(cAliasSD1)->(eof())
 
-		cCodProduto 	:= (cAliasSD1)->FS_PRODUTO
-		nPesoDocumento	:= (cAliasSD1)->FS_PESO
-		nPesoAjuste		:= 0
-		cItemDocumento	:= (cAliasSD1)->FS_ITEM
+		nPesoDocumento	:= nPesoDocumento + (cAliasSD1)->FS_PESO
 
-		If ( cOpcao == "C")
-			If (cAliasTmpAjuste)->(dbSeek(cItemDocumento+cCodProduto))
-
-				While !(cAliasTmpAjuste)->(eof()) .And. (cAliasTmpAjuste)->FS_PRODUTO == cCodProduto .And. (cAliasTmpAjuste)->FS_ITEM == cItemAjuste
-					nPesoAjuste := nPesoAjuste + (cAliasTmpAjuste)->FS_PESO
-					(cAliasTmpAjuste)->(dbSkip())
-				EndDo
-
-				If ( nPesoAjuste >  nPesoDocumento)
-					FWAlertWarning("Peso do ajuste Produto '"+Alltrim(cCodProduto)+"' do Item '"+cItemAjuste+"' está maior que peso do documento.",cTitulo)
-					lRet := .F.
-					Exit
-				Endif
-			Endif
-		Else
-			nPesoAjuste		:= 0
-			For nRecord := 1 To Len(oGridAjusteItens:aCols)
-				If ( oGridAjusteItens:aCols[nRecord,POS_DELELTE_AJUSTE] == .F. )
-					cCodProdutoajuste	:= oGridAjusteItens:aCols[nRecord,POS_COD_AJUSTE]
-					cItemAjuste			:= oGridAjusteItens:aCols[nRecord,POS_ITEM_AJUSTE]
-					nPeso				:= oGridAjusteItens:aCols[nRecord,POS_PESO_AJUSTE]
-					If ( cCodProduto == cCodProdutoajuste) .And. ( cItemAjuste == cItemDocumento )
-						nPesoAjuste	:= nPesoAjuste + nPeso
-					Endif
-
-				Endif
-			Next
-
-			If ( nPesoAjuste >  nPesoDocumento)
-				FWAlertWarning("Peso do ajuste Produto '"+Alltrim(cCodProduto)+"' do Item '"+cItemAjuste+"' está maior que peso do documento.",cTitulo)
-				lRet := .F.
-				Exit
-			Endif
-
-		Endif
 		(cAliasSD1)->(dbSkip())
 	EndDo
+
+	If ( cOpcao == "C")
+
+		nPesoAjuste		:= 0
+
+		(cAliasTmpAjuste)->(dbGotop())
+		While !(cAliasTmpAjuste)->(eof())
+			nPesoAjuste := nPesoAjuste + (cAliasTmpAjuste)->FS_PESO
+			(cAliasTmpAjuste)->(dbSkip())
+		EndDo
+
+		If ( nPesoAjuste >  nPesoDocumento)
+			FWAlertWarning("Peso total do ajuste está maior que o peso Total documento.",cTitulo)
+			lRet := .F.
+		Endif
+	Else
+		nPesoAjuste		:= 0
+
+		For nRecord := 1 To Len(oGridAjusteItens:aCols)
+			If ( oGridAjusteItens:aCols[nRecord,POS_DELELTE_AJUSTE] == .F. )
+				nPeso				:= oGridAjusteItens:aCols[nRecord,POS_PESO_AJUSTE]
+				nPesoAjuste	:= nPesoAjuste + nPeso
+			Endif
+		Next
+
+		If ( nPesoAjuste >  nPesoDocumento)
+			FWAlertWarning("Peso total do ajuste está maior que o peso Total documento.",cTitulo)
+			lRet := .F.
+		Endif
+	Endif
 
 	RestArea(aAreaSD1)
 	RestArea(aAreaTmp)
@@ -1813,7 +1779,7 @@ Static Function atualizarRefaturamento(cTipo,cDocTransferencia)
 	If ( cTipo == "S")
 		cStatus := "1"
 		cStatusRefaturamento := ""
-		cPedidoVenda := ""		 
+		cPedidoVenda := ""
 	Else
 		cStatus := "2"
 		dDataConfirmacao := dDataBase
@@ -1873,32 +1839,44 @@ Static Function alterarLoteProdutosAjuste()
 	Local nTamCampoLote	:= 0 	as numeric
 	Local cLoteCtl		:= ""	as character
 	Local cComplemento	:= ""	as character
+	Local cTes			:= ""	as character
 
 	aAreaSD1		:= (cAliasSD1)->(getArea())
 	aAreaTmp		:= (cAliasTmpAjuste)->(getArea())
 	nTamCampoLote	:= FWTamSX3("D1_LOTECTL")[1]
 
+	(cAliasSD1)->(dbSetOrder(1))
+
 	(cAliasTmpAjuste)->(dbGotop())
 
 	While !(cAliasTmpAjuste)->(eof())
 
+		(cAliasSD1)->(dbSeek( (cAliasTmpAjuste)->FS_ITEM))
+
 		cLoteCtl := AvKey((cAliasTmpAjuste)->FS_LOTECTL,"D1_LOTECTL")
 
-		nPos := aScan(aProdutosLote,{|x| x[1] == cLoteCtl})
-		If ( nPos == 0)
-			cComplemento	:= "A"
-			aAdd(aProdutosLote,{cLoteCtl,cComplemento})
-		Else
-			cComplemento	:= Soma1(aProdutosLote[nPos,2])
-			aProdutosLote[nPos,2] := cComplemento
+		cTes := (cAliasSD1)->FS_TES
+
+		If SF4->(dbSeek(FWxFilial("SF4")+cTes)) .And. ( SF4->F4_ESTOQUE == "S") .And. ( SF4->F4_PODER3 == "N")
+
+			If !((cAliasTmpAjuste)->FS_QUANT == 0 )
+				nPos := aScan(aProdutosLote,{|x| x[1] == cLoteCtl})
+				If ( nPos == 0)
+					cComplemento	:= "A"
+					aAdd(aProdutosLote,{cLoteCtl,cComplemento})
+				Else
+					cComplemento	:= Soma1(aProdutosLote[nPos,2])
+					aProdutosLote[nPos,2] := cComplemento
+				Endif
+				If !Empty(cLoteCtl)
+					cLoteCtl := Alltrim(SubStr(cLoteCtl,1,nTamCampoLote-1)) + cComplemento
+				Endif
+			Endif
 		Endif
 
 		RecLock(cAliasTmpAjuste,.F.)
-		If !Empty(cLoteCtl)
-			(cAliasTmpAjuste)->FS_LOTEDES := Alltrim(SubStr(cLoteCtl,1,nTamCampoLote-1)) + cComplemento
-		Else
-			(cAliasTmpAjuste)->FS_LOTEDES := ""
-		Endif
+
+		(cAliasTmpAjuste)->FS_LOTEDES := cLoteCtl
 		(cAliasTmpAjuste)->(MsUnlock())
 
 		(cAliasTmpAjuste)->(dbSkip())

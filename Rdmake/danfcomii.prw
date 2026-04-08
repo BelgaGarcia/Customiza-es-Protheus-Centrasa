@@ -410,8 +410,11 @@ Method SetChvAcesso(oNF) CLASS PrtDanfeCom
 Return Self
 
 Method SetDest(oDestino, oIdent) CLASS PrtDanfeCom
-	Local cCnpj := Space(14)
-	Local aDest	:= {}
+	Local cCnpj   	:= Space(14)
+	Local aDest	  	:= {}
+	Local aLinesEnd := {}
+	Local nLinhaY 	:= 1090
+	Local nI		:= 0
 
 	Default oDestino	:= Nil
 	Default oIdent		:= Nil
@@ -437,10 +440,13 @@ Method SetDest(oDestino, oIdent) CLASS PrtDanfeCom
 
 						Self:oPrinter:Say(1050,040, cAux,Self:oFont14N:oFont)
 
-						cAux := aDest[01] + " - " + aDest[02] + " - " + aDest[03] + " - " + aDest[05]
-						cAux := SubStr(cAux, 1, 40)
+						cAux := aDest[01] + " - " + aDest[02] + ", " + aDest[05] + " - " + aDest[07] + ", CEP: " + aDest[03]
+						aLinesEnd := WrapText( cAux, 54)
 
-						Self:oPrinter:Say(1090,040,cAux,Self:oFont14N:oFont)
+						For nI := 1 To Min(Len(aLinesEnd), 3)
+							Self:oPrinter:Say(nLinhaY, 060, aLinesEnd[nI], Self:oFont14N:oFont)
+							nLinhaY += 40
+						Next
 
 						Do Case
 						Case Type("oDestino:_CNPJ") == "O"
@@ -658,15 +664,15 @@ Method impIt(aItem, nNroLinhatem, nPosItem, nPosUni, nPosQuant, nPosUnit, nPosTo
 	Default nPosPis      := 0
 	Default aTributos    := {}
 
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosItem,  SubStr(cProd, 1, MaxCod(cProd, 500)), Self:oFont10:oFont, 800, 10,, 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosUni,   getUnMed(allTrim(aItem:_PROD:_UMED:TEXT)), Self:oFont10:oFont, 20, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosQuant, AllTrim(Transform(Val(aItem:_PROD:_qFaturada:TEXT),"@e 99,999,999,999.9999")),Self:oFont10:oFont, 60, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosUnit,  AllTrim(Transform(Val(aItem:_PROD:_vItem:TEXT),"@e 9,999,999,999,999.99")), Self:oFont10:oFont, 100, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosTotal, AllTrim(Transform(Val(aItem:_PROD:_vProd:TEXT),"@e 9,999,999,999,999.99")), Self:oFont10:oFont, 80, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosBcIcm, Alltrim(Transform(aTributos[1][1], "@e 9,999,999,999,999.99")), Self:oFont10:oFont, 100, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosICMS,	Alltrim(Transform(aTributos[1][2], "@e 9,999,999,999,999.99")), Self:oFont10:oFont, 100, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosAliq,	Alltrim(Transform(aTributos[1][3], "@e 999.99")), Self:oFont10:oFont, 100, 10, , 0)
-	Self:oPrinter:SayAlign(nNroLinhatem, nPosPis,	Alltrim(Transform(aTributos[1][4], "@e 9,999,999,999,999.99")), Self:oFont10:oFont, 1000, 10, , 0)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosItem,SubStr(cProd, 1, MaxCod(cProd, 500)),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosUni,getUnMed(AllTrim(aItem:_PROD:_UMED:TEXT)),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosQuant,AllTrim(Transform(Val(aItem:_PROD:_qFaturada:TEXT),"@e 99,999,999,999.9999")),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosUnit,AllTrim(Transform(Val(aItem:_PROD:_vItem:TEXT),"@e 9,999,999,999,999.99")),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosTotal,AllTrim(Transform(Val(aItem:_PROD:_vProd:TEXT),"@e 9,999,999,999,999.99")),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosBcIcm,Alltrim(Transform(aTributos[1][1], "@e 9,999,999,999,999.99")),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosICMS,Alltrim(Transform(aTributos[1][2], "@e 9,999,999,999,999.99")),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosAliq,Alltrim(Transform(aTributos[1][3], "@e 999.99")),Self:oFont10:oFont)
+	Self:oPrinter:Say(nNroLinhatem+20,nPosPis,AllTrim(Transform(Val(aItem:_PROD:_qFaturada:TEXT),"@e 99,999,999,999.9999")),Self:oFont10:oFont)
 return
 
 Method ProcessItems(oDet, oNF) CLASS PrtDanfeCom
@@ -729,55 +735,57 @@ Method ProcessImp(oImposto, cTaxCode, nBaseICM, nValICM, nPICM, nPis, nCof) CLAS
 Return
 
 Method SetInfCPL(oIdent, oNF, nLinIni, lOnlyMsg) CLASS PrtDanfeCom
-    Local nLenMensagens := 0
     Local nX            := 1
     Local nLin          := 0
-    Local nTem          := 0
-    Local nQtdLinMsg    := 0
     Local aResFisco     := {}
     Local aMsgRet       := {}
+	Local cMsg          := ""
+	Local nInicioL	    := 1
+	Local nFimL 	    := 68
+	Local nLinhasQtd	:= 0
 
     Default oIdent := Nil
     Default oNF    := Nil
     Default nLinIni := 2300
     Default lOnlyMsg := .F.
 
-    //Informações complementares
-
     Self:oPrinter:Box(nLinIni,000,2980,1550)
-    Self:oPrinter:Say(nLinIni + 20,010,"INFORMAÇÕES COMPLEMENTARES",Self:oFont10N:oFont)
+    Self:oPrinter:Say(nLinIni + 20,020,"INFORMAÇÕES COMPLEMENTARES",Self:oFont10N:oFont)
 
     Self:oPrinter:Box(nLinIni,1550,2980,2452)
-    Self:oPrinter:Say(nLinIni + 20,1560,"RESERVADO AO FISCO",Self:oFont10N:oFont)
+    Self:oPrinter:Say(nLinIni + 20,1570,"RESERVADO AO FISCO",Self:oFont10N:oFont)
 
-    nLin            := nLinIni + 50
-    nQtdLinMsg      := Self:MAXMSG
-    if lOnlyMsg
-        nQtdLinMsg := self:MAXONLYMSG
-    endIf
-	
-    nTem            := Min(Len(Self:aMessages), nQtdLinMsg)
-	
 	//"INFORMAÇÕES COMPLEMENTARES"
-    While nX <= nTem .And. Len(Self:aMessages) > 0
-        Self:oPrinter:Say(nLin,005,Substr(Self:aMessages[nX],1,130),Self:oFont10:oFont)
-        nLin:= nLin+15
-        nX++
-    EndDo
-	
+    nLin            := nLinIni + 50
+	If !Empty(Self:aMessages) .And. Len(Self:aMessages) > 0
+		nLinhasQtd := Ceiling(Len(Self:aMessages[1]) / nFimL) //Calcula a quantidade de linhas necessárias para impressao
+		While nX <= nLinhasQtd .And. nX <= 32
+			cMsg := SubStr(Self:aMessages[1],nInicioL,nFimL)
+			Self:oPrinter:Say(nLin,020,cMsg,Self:oFont10:oFont)
+			nLin := nLin + 20
+			nInicioL += nFimL
+			nX ++
+		EndDo
+	EndIf
 	//"RESERVADO AO FISCO"
     If !Empty(Self:cRetMsg)
-        aMsgRet := StrTokArr( Self:cRetMsg, "|")
-        aEval( aMsgRet, {|x| aadd( aResFisco, alltrim(x) ) } )
+		aMsgRet := StrTokArr( Self:cRetMsg, "|")
+		aEval( aMsgRet, {|x| aadd( aResFisco, alltrim(x) ) } )
+
+		nInicioL	    := 1
+		nFimL 	   		:= 38
+		nLinhasQtd 		:= Ceiling(Len(aResFisco[1]) / nFimL) //Calcula a quantidade de linhas necessárias para impressao
+		nX 				:= 1
+		nLin            := nLinIni + 50
+
+		While nX <= nLinhasQtd .And. nX <= 32
+			cMsg := SubStr(aResFisco[1],nInicioL,nFimL)
+			Self:oPrinter:Say(nLin,1570,cMsg,Self:oFont10:oFont)
+			nLin := nLin + 20
+			nInicioL += nFimL
+			nX ++
+		EndDo
     endif
-
-    nLenMensagens   := Len(aResFisco)
-    nLin            := nLinIni + 50
-
-    For nX := 1 To Min(nLenMensagens, Self:MAXMSG)
-        Self:oPrinter:Say(nLin,1560,Substr(aResFisco[nX],1,70),Self:oFont10:oFont)
-        nLin:= nLin+15
-    Next
 
 Return
 
@@ -804,7 +812,7 @@ Method SetItens(nItemInicial,nTotalItens) CLASS PrtDanfeCom
 	// // Itera pelos itens na página atual
 	For nI := nItemInicial To nItemFinal
 		Self:impIt(oDet[nI], nNroLinhatem, nPosItem, nPosUni, nPosQuant, nPosUnit, nPosTotal, nPosBcIcm, nPosICMS, nPosAliq, nPosPis, Self:ProcessItems(oDet[nI], oNF)) //Imprime linha de item
-		nNroLinhatem += 15
+		nNroLinhatem += 25
 	Next
 
 Return nItemFinal
@@ -1424,3 +1432,41 @@ Static Function MaxCod(cString, nTamanho)
 	Next
 
 	Return nMax
+
+//-----------------------------------------------------------------------
+/*/{Protheus.doc} WrapText
+Executa o retorna de notas
+
+@author Felipe Duarte Luna
+@since 13/12/2025
+@version 1.0
+
+@param  cID ID da nota que sera retornado
+
+@return aRetorno   Array com do Endereço quebrado em linhas, quando atinge o limite de caracteres informados
+/*/
+//-----------------------------------------------------------------------
+Static Function WrapText(cText, nLimit)
+    Local aLines := {}
+    Local cLinha := ""
+    Local aPalavras := StrTokArr(AllTrim(cText), " ")
+    Local nI
+
+    For nI := 1 To Len(aPalavras)
+        If (Len(cLinha) + Len(aPalavras[nI]) + 1) <= nLimit
+            If Empty(cLinha)
+                cLinha := aPalavras[nI]
+            Else
+                cLinha := cLinha + " " + aPalavras[nI]
+            EndIf
+        Else
+            AAdd(aLines, cLinha)
+            cLinha := aPalavras[nI]
+        EndIf
+    Next
+
+    If !Empty(cLinha)
+        AAdd(aLines, cLinha)
+    EndIf
+
+Return aLines

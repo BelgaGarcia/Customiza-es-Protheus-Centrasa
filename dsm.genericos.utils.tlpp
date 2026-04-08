@@ -239,7 +239,8 @@ User Function checarLoteDigitadoBobina(cCodigoProduto, cNumeroLote, cNomeCampo, 
 	Local cOper6Fis   := Strtran(Alltrim(SuperGetMV("ZV_D1OPER6", .F., "")),";","#")
 
 	DbSelectArea("SB8")
-	If !Empty(cNumeroLote) .AND. !FWIsInCallStack("NFENFECOB") .AND. !FWIsInCallStack("compras.entrada.u_Notagerencial") .And. !FWIsInCallStack("faturamento.pedido.u_Enviasaldogerencial") // Amarracao NF triangular
+	If !Empty(cNumeroLote) .AND. !FWIsInCallStack("NFENFECOB") .AND. !FWIsInCallStack("compras.entrada.u_Notagerencial") .And. !FWIsInCallStack("faturamento.pedido.u_Enviasaldogerencial");
+		.AND. !FWIsInCallStack("compras.entrada.u_devolucaoIndustrializacao") // Amarracao NF triangular
 
 		Do Case
 		Case Alltrim(cNomeCampo) == "D1_LOTECTL"
@@ -515,13 +516,13 @@ User Function fBuscaProximoLote(cNumeroOrdemProducao, cCodigoProdutoProduzido)
 
 	If Alltrim(SB1->B1_RASTRO) == "L"
 
-		cQuery := "SELECT MAX(CAST(H6_LOTECTL AS NUMERIC)) MAXLOTEATUAL "+CRLF
-		cQuery += " FROM "+RetSqlTab("SH6") + " " + CRLF
+		cQuery := "SELECT MAX(CAST(B8_LOTECTL AS NUMERIC)) MAXLOTEATUAL "+CRLF
+		cQuery += " FROM "+RetSqlTab("SB8") + " " + CRLF
 		cQuery += "	WHERE 1=1 "+CRLF
-		cQuery += "		AND " + RetSqlFil("SH6")+" "+CRLF
-		cQuery += "		AND " + RetSqlDel("SH6")+" "+CRLF
-		cQuery += "		AND H6_OP = "+ValToSql(cNumeroOrdemProducao)+" "+CRLF
-		cQuery += "		AND H6_OPERAC = '02' "+CRLF
+		cQuery += "		AND " + RetSqlFil("SB8")+" "+CRLF
+		cQuery += "		AND " + RetSqlDel("SB8")+" "+CRLF
+		cQuery += "		AND B8_LOTECTL LIKE '"+AllTrim(cNumeroOrdemProducao)+"%' "+CRLF
+		//cQuery += "		AND H6_OPERAC = '02' "+CRLF
 
 		cQuery := ChangeQuery(cQuery)
 		cQryTmp := MPSysOpenQuery( cQuery )

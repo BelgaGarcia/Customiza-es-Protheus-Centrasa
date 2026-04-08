@@ -459,6 +459,10 @@ Static Function gravaPedidoArquivoTmp(oProcess)
 							EndIf
 						ElseIf (aCamposItem[nRecordPed] == "C6_LOCAL")
 							xValorCampo := aDadosNfOrigem[13]
+						ElseIf (aCamposItem[nRecordPed] == "QTD_PLANO")
+							xValorCampo := 0
+						ElseIf (aCamposItem[nRecordPed] == "PESO_PLANO")
+							xValorCampo := aDadosNfOrigem[11]
 						ElseIf (aCamposItem[nRecordPed] == "C5_ZOBS")
 							LOOP
 						EndIf

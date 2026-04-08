@@ -18,51 +18,86 @@ Número e Nome DF:	MGP022_CENTRASA_SMUD22_DF_BUSCA NF COMPLEMENTO ICMS
 @database TCLOUD SQL
 /*/
 
-user Function buscaIcms()
+User Function buscaIcms()
+	Local lRetorno	:= .T.	as logical
+	Local cMensagem	:= ""	as character
+	Local cC6Oper3	:= AllTrim(GetMV("ZV_C6OPER3"))	as character
 
-	Local cQuery         := ""	        as character
-	Local lRet           := .T.
-	Local nPosTES        := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_TES" })
-	Local nPosNFO        := Ascan(Aheader,{|x| AllTrim(x[2]) == "C6_NFORI" })
+	Private cAliasICMS	:= GetNextAlias()	as character
 
-	Local cTES := aCols[n,nPosTes]
+	buscaComplementoICMS()
+	
+	DbSelectArea(cAliasICMS)
+	(cAliasICMS)->(DbGoTop())
+	While !(cAliasICMS)->(EoF())
+		If !(AllTrim((cAliasICMS)->C6_OPER) $ cC6Oper3)
+			lRetorno	:= .F.
+			cMensagem	:= "NF de devolução deverá calcular ICMS, e por isso deve usar o Tipo de Operação " + cC6Oper3 + "."
 
-	Private cNFO   := aCols[n,nPosNFO]
-	Private cAlias := "" as character
-
-	DbSelectArea("SF4")
-	DbSetOrder(1)
-	If DbSeek(Fwxfilial("SF4") + cTES) .And. SF4->F4_PODER3 == "D"
-
-		cQuery := getQuery()
-
-		TCQUERY CQUERY NEW ALIAS(cAlias:=GetNextAlias())
-
-		dbSelectArea(cAlias)
-		(cAlias)->(dbGotop())
-		If ( (cAlias)->(!EOF()) )
-			cMsg := "NF de devolução deverá calcular ICMS, e por isso deve usar o Tipo de Operação " + Alltrim(getmv("ZV_C6OPER3"))
-			Help(,,"HELP-Centrasa",,cMsg,1,0)
+			Help(,,"HELP-Centrasa",,cMensagem,1,0)
+			Exit
 		EndIf
 
-		If ( Select(cAlias) > 0 )
-			(cAlias)->(dbCloseArea())
-		Endif
-	EndIf
-Return lRet
+		(cAliasICMS)->(DbSkip())
+	EndDo
 
-/*/
-	Query ordem de producao
-/*/
+	(cAliasICMS)->(DbCloseArea())
+Return lRetorno
 
-Static Function getQuery()
-	Local cQyery := ""	as character
+/*
+	Buscar dados de complemento de ICMS
+*/
+Static Function buscaComplementoICMS()
+	Local cQuery	:= ""	as character
 
-	cQyery += " SELECT * FROM "+RetSQLTab("SD1")+CRLF
-	cQyery += " WHERE "+RetSqlDel("SD1")+CRLF
-	cQyery += " AND "+RetSqlFil("SD1")+CRLF
-	cQyery += " AND D1_TIPO = 'I'" +CRLF
-	cQyery += " AND D1_NFORI = '" + cNFO + "'" +CRLF
-	cQyery += " AND D1_FILIAL  =  '" + FwXFilial("SD1")  + "'"  + CRLF
+	cQuery	:= getQueryBuscaComplementoICMS()
 
-Return cQyery
+	MPSysOpenQuery( cQuery, cAliasICMS )
+Return
+
+/*
+	Monta a query para buscar dados a faturar
+*/
+Static Function getQueryBuscaComplementoICMS()
+	Local cQuery		:= ""	as character
+
+	cQuery := "	SELECT " + CRLF
+	cQuery += "			C6_ITEM " + CRLF
+	cQuery += "			,C6_PRODUTO " + CRLF
+	cQuery += "			,C6_OPER " + CRLF
+	cQuery += "			,C6_TES " + CRLF
+
+	cQuery += "	FROM " + CRLF
+	cQuery += "		" + RetSQLTab("SC5") + CRLF
+
+	cQuery += "	INNER JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SC6") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			" + RetSqlFil("SC6") + CRLF
+	cQuery += "			AND C6_NUM		= C5_NUM " + CRLF
+	cQuery += "			AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += "	INNER JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SF4") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			" + RetSqlFil("SF4") + CRLF
+	cQuery += "			AND F4_CODIGO	= C6_TES " + CRLF
+	cQuery += "			AND F4_PODER3	= 'D' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SF4") + CRLF
+
+	cQuery += "	INNER JOIN " + CRLF
+	cQuery += "		" + RetSQLTab("SD1") + CRLF
+	cQuery += "			ON" + CRLF
+	cQuery += "			" + RetSqlFil("SD1") + CRLF
+	cQuery += "			AND D1_NFORI	= C6_NFORI " + CRLF
+	cQuery += "			AND D1_SERIORI	= C6_SERIORI " + CRLF
+	cQuery += "			AND D1_ITEMORI	= C6_ITEMORI " + CRLF
+	cQuery += "			AND D1_TIPO		= 'I' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SD1") + CRLF
+
+	cQuery += "	WHERE " + CRLF
+	cQuery += "			1 = 1 " + CRLF
+	cQuery += "			AND " + RetSqlFil("SC5") + CRLF
+	cQuery += "			AND C5_NUM		= '"+SC5->C5_NUM+"' " + CRLF
+	cQuery += "			AND " + RetSqlDel("SC5") + CRLF
+Return cQuery

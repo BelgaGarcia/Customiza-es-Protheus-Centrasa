@@ -18,7 +18,7 @@
 #DEFINE MAXITEMP2F 069					// Máximo de produtos para a página 2 em diante quando a página não possui informações complementares
 #DEFINE MAXITEMP3  025					// Máximo de produtos para a pagina 2 em diante (caso utilize a opção de impressao em verso) - Tratamento implementado para atender a legislacao que determina que a segunda pagina de ocupar 50%.
 #DEFINE MAXITEMC   035					// Máxima de caracteres por linha de produtos/serviços
-#DEFINE MAXMENLIN  080					// Máximo de caracteres por linha de dados adicionais
+#DEFINE MAXMENLIN  062					// Máximo de caracteres por linha de dados adicionais
 #DEFINE MAXMSG     013					// Máximo de dados adicionais por página
 #DEFINE MAXVALORC  009					// Máximo de caracteres por linha de valores numéricos
 #DEFINE MAXCODPRD  050					// Máximo de caracteres do codigo de produtos/servicos conforme o tamanho do quadro "Cod. prod"
@@ -6490,9 +6490,10 @@ IF lFat853
 			For nY := 1 To Min(9, nFaturas)
 				Do Case
 					Case nX == 1
-						AAdd(aAux, AllTrim(oFatura:_FAT:_NFAT:TEXT))
+						AAdd(aAux, "Fatura: " + AllTrim(oFatura:_FAT:_NFAT:TEXT))
 					Case nX == 2
-						AAdd(aAux, AllTrim(oFatura:_FAT:_VLIQ:TEXT))
+						AAdd(aAux, AllTrim(TransForm(Val(oFatura:_FAT:_VLIQ:TEXT), "@E 9,999,999,999,999.99")))
+						
 				EndCase
 			Next nY
 			If nY <= 9
