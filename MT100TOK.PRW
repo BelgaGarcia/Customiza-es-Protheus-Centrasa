@@ -16,8 +16,11 @@ Ponto de entrada na operação antes da gravação da Nota Fiscal de Entrada
 /*/
 User Function MT100TOK()
 	Local lRet			:= .T.
+	Local lMATA920		:= IsInCallStack("MATA920")
 	
-	If (Findfunction("compras.entrada.u_AjustaArmazemGerencial")) .And. ( (l103Class .And. Alltrim(SF1->F1_ESPECIE) == "GER") .Or. ( Type("cEspecie") == "C" .And. Alltrim(cEspecie) == "GER"  ))
-		lRet := compras.entrada.u_AjustaArmazemGerencial()
+	If !lMATA920
+		If (Findfunction("compras.entrada.u_AjustaArmazemGerencial")) .And. ( (l103Class .And. Alltrim(SF1->F1_ESPECIE) == "GER") .Or. ( Type("cEspecie") == "C" .And. Alltrim(cEspecie) == "GER"  ))
+			lRet := compras.entrada.u_AjustaArmazemGerencial()
+		EndIf
 	EndIf
 Return lRet

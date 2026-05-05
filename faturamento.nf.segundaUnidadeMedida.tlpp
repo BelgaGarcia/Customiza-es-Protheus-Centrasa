@@ -108,11 +108,12 @@ Static Function queryProdutoXCliente(nPosicaoArray)
 	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
 	cQuery += " 	    AND C6_NUM		= '"+aRetorno[1][nPosicaoArray][38]+"' " + CRLF
 	cQuery += " 	    AND C6_PRODUTO	= A7_PRODUTO " + CRLF
-	cQuery += " 	    AND C6_NOTA		= '"+SF2->F2_DOC+"' " + CRLF
-	cQuery += " 	    AND C6_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
 	
 	If !Empty(aRetorno[1][nPosicaoArray][39])
 		cQuery += " 	    AND C6_ITEM		= '"+aRetorno[1][nPosicaoArray][39]+"' " + CRLF
+	Else
+		cQuery += " 	    AND C6_NOTA		= '"+SF2->F2_DOC+"' " + CRLF
+		cQuery += " 	    AND C6_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
 	EndIf
 	
 	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF

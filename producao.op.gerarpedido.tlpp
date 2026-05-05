@@ -684,7 +684,7 @@ Static Function geraPedidoVendaOP(oProcess)
 			SB1->(DbSeek(FwxFilial("SB1")+(cAliasItem)->C6_PRODUTO))
 
 			If AllTrim(SB1->B1_TIPO) $ "PA|PI" //Empty((cAliasItem)->C6_NFORI )
-				lRet := .T.
+				//lRet := .T.
 				cMsg := ""
 
 				If !QP6->(DbSeek(FwxFilial("QP6")+(cAliasItem)->C6_PRODUTO))
@@ -702,14 +702,13 @@ Static Function geraPedidoVendaOP(oProcess)
 					lRet := .F.
 				EndIf
 
-				If !lRet
+				If !Empty(cMsg)
 					Aadd(aErroLog,{3,cMsg,"Geração Ordem de Produção: "+(cAliasItem)->C6_PRODUTO,(cAliasCab)->C5_CLIENTE,(cAliasCab)->C5_LOJACLI,(cAliasCab)->C5_ZLOTCTL,""})
 				EndIf
-
 			EndIf
-			(cAliasItem)->(DbSkip())
 
-		End Do
+			(cAliasItem)->(DbSkip())
+		EndDo
 
 		If lRet
 			Begin Transaction

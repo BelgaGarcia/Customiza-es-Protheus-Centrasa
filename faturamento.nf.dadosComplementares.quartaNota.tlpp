@@ -85,14 +85,14 @@ Static Function montaMensagemFiscal()
 
 	buscaDadosFornecedor()
 
-	If cCFOPMensagem == "902" .Or. ( cCFOPMensagem == "903" .And. cTipoNotaEntrada == "B" )
+	If cCFOPMensagem $ "902/124" .Or. ( cCFOPMensagem == "903" .And. cTipoNotaEntrada == "B" )
 		cRetorno	:= "MATERIAL DE SUA PROPRIEDADE QUE NOS FOI ENVIADO PARA INDUSTRIALIZAÇÃO ATRAVÉS DA(s):"
 		cRetorno	+= " NF " + cNumeroNotaUsina
 		cRetorno	+= ", SÉRIE " + cSerieUsina
 		cRetorno	+= ", DATA EMISSÃO " + DtoC(dDataNotaEntrada)
 		cRetorno	+= ", VALOR " + AllTrim(Str(nValorItem)) + "."
 
-	ElseIf cCFOPMensagem == "925" .Or. ( cCFOPMensagem == "903" .And. cTipoNotaEntrada == "N" )
+	ElseIf cCFOPMensagem $ "925/125" .Or. ( cCFOPMensagem == "903" .And. cTipoNotaEntrada == "N" )
 		cRetorno	:= "MATERIAL DE SUA PROPRIEDADE QUE NOS FOI ENVIADO POR CONTA E ORDEM PELO"
 		cRetorno	+= " FORNECEDOR " + AllTrim((cAliasFornecedor)->A2_NOME)
 		cRetorno	+= " SITUADO A " + AllTrim((cAliasFornecedor)->A2_END) + " " + AllTrim((cAliasFornecedor)->A2_NR_END)
@@ -112,7 +112,7 @@ Static Function montaMensagemFiscal()
 		cRetorno	+= " INSP.: " + cNumeroInspecao
 		cRetorno	+= " / ID BOBINA: " + cLoteBobina + "."
 
-	ElseIf cCFOPMensagem == "924"
+	/*ElseIf cCFOPMensagem == "924"
 		cRetorno	:= "REMESSA PARA INDUSTRIALIZAÇÃO ENTREGUE PELO PRIMEIRO BENEFICIADOR POR CONTA E ORDEM DO AUTOR DA ENCOMENDA -"
 
 		If cTipoNotaEntrada == "B"
@@ -138,7 +138,7 @@ Static Function montaMensagemFiscal()
 			cRetorno	+= " Insc. Est. " + AllTrim((cAliasFornecedor)->A2_INSCR)
 		EndIf
 
-		cRetorno	+= " ID MATERIA PRIMA: " + cLoteBobina
+		cRetorno	+= " ID MATERIA PRIMA: " + cLoteBobina*/
 	EndIf
 
 	If !Empty(cRetorno)
@@ -162,7 +162,7 @@ Static Function montaMensagemComercial()
 		cRetorno	+= "/DATA: " + DtoC(dDataNotaEntrada) //IIF(Empty(dDataQuartaNota), "", DtoC(dDataQuartaNota))
 		cRetorno	+= ValPaXPeso()
 		cRetorno	+= "/Cod.Bob.: " + AllTrim(cLoteBobina)
-		cRetorno	+= "/NF.Ent.: " + IIF(Empty(cNumeroNotaUsina), cNumeroQuartaNota, cNumeroNotaUsina)
+		cRetorno	+= "/NF.Ent.: " + IIF(Empty(cNumeroQuartaNota), cNumeroNotaUsina, cNumeroQuartaNota)
 
 		If cCFOPMensagem $ "124/125" //Empty(aProdutos[nProduto][39])
 			cRetorno	+= "/Lotes: " + informacaoLotes()
@@ -241,7 +241,7 @@ Static Function queryNotaUsina()
 	cQuery += "     " + RetSQLTab("SD1") + CRLF
 	cQuery += "     	ON" + CRLF
 	cQuery += " 	    D1_FILIAL = C5_FILIAL " + CRLF
-	cQuery += " 	    AND D1_LOTEFOR = C5_ZINSPE" + CRLF
+	//cQuery += " 	    AND D1_LOTEFOR = C5_ZINSPE" + CRLF
 	cQuery += " 	    AND D1_LOTECTL = C5_ZLOTCTL " + CRLF
 	cQuery += " 	    AND D1_TP = 'MP' " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
