@@ -41,18 +41,48 @@ Static Function gatilhoQuantidadeLiberada()
 	Local cCampo		:= ReadVar()
 	Local nPosQTDVEN	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDVEN"})	as integer
 	Local nPosQTDLIB	:= aScan(aHeader,{|x| AllTrim(x[2]) == "C6_QTDLIB"})	as integer
+	Local nPosItem	    := aScan(aHeader,{|x| AllTrim(x[2]) == "C6_ITEM"})	    as integer
+	Local nPosProd	    := aScan(aHeader,{|x| AllTrim(x[2]) == "C6_PRODUTO"})	as integer
+	Local lFatu	  		:= .F.	                                                As Logical
+	Local cNfNum        := ''                                                   As character
+	Local cNfSerie      := ''                                                   As character
+	Local cLoja         := ''                                                   As character
+	/*
+	000011220
+	001
+	0027
+	0283370
+	*/
+	dbSelectArea("SC6")
+	dbSetOrder(1)
+	If MsSeek(xFilial("SC6") + M->C5_NUM + aCols[n][nPosItem] + aCols[n][nPosProd])
+		cNfNum   := SC6->C6_NOTA
+		cNfSerie := SC6->C6_SERIE
+		cLoja    := SC6->C6_LOJA
+	EndIf
+	DbSelectArea("SC6")
+	DbCloseArea()
 
-	If cCampo == "M->C6_ZLIBFAT"
-		If M->C6_ZLIBFAT == "S"
-			aCols[n][nPosQTDLIB]	:= aCols[n][nPosQTDVEN]
-		ElseIf M->C6_ZLIBFAT == "N"
-			aCols[n][nPosQTDLIB]	:= 0
+	dbSelectArea("SF2")
+	dbSetOrder(1)
+	If MsSeek(xFilial("SF2")+cNfNum+cNfSerie+M->C5_CLIENTE+cLoja)
+		lFatu := .T.
+	EndIf
+	If lFatu == .F.
+		If cCampo == "M->C6_ZLIBFAT"
+			If M->C6_ZLIBFAT == "S"
+				aCols[n][nPosQTDLIB]	:= aCols[n][nPosQTDVEN]
+			ElseIf M->C6_ZLIBFAT == "N"
+				aCols[n][nPosQTDLIB]	:= 0
+			EndIf
 		EndIf
+	Else
+		Return .F.
 	EndIf
 
 	atualizaQuantidadeLiberadaRetorno()
 Return
-
+//028040
 /*
 	Atualiza quantidade liberada de retorno
 */
