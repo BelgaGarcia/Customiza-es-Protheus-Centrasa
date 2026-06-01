@@ -202,7 +202,7 @@ Static Function getQueryNotas()
 	cQuery += "			,CASE WHEN SA14.A1_LOJA IS NULL THEN A2_LOJA ELSE SA14.A1_LOJA END AS A1_LOJA " + CRLF
 	cQuery += "			,CASE WHEN SA14.A1_NOME IS NULL THEN A2_NOME ELSE SA14.A1_NOME END AS A1_NOME " + CRLF
 	cQuery += "			,SD1.D1_LOTECTL " + CRLF
-	cQuery += "			,SD1.D1_EMISSAO AS DT_RECEB " + CRLF
+	cQuery += "			,SD1.D1_DTDIGIT AS DT_RECEB " + CRLF
 	cQuery += "			,B1_COD " + CRLF
 	cQuery += "			,SD1.D1_DOC " + CRLF
 	cQuery += "			,SDH1.DH_DOC AS DH_DOC1 " + CRLF
@@ -334,7 +334,7 @@ Static Function getQueryNotas()
 	EndIf
 
 	If !Empty(dDataRecebimenteAte)
-		cQuery += "			AND SD1.D1_EMISSAO	BETWEEN '"+DtoS(dDataRecebimenteDe)+"' AND '"+DtoS(dDataRecebimenteAte)+"' " + CRLF
+		cQuery += "			AND SD1.D1_DTDIGIT	BETWEEN '"+DtoS(dDataRecebimenteDe)+"' AND '"+DtoS(dDataRecebimenteAte)+"' " + CRLF
 	EndIf
 
 	If !Empty(cIDBobina)

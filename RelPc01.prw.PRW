@@ -14,6 +14,8 @@ Função para geração de relatório de Plano de Corte
 User Function RelPc01()
 	Local nx
 	Local cArquivo          := ""
+	Local nPosObs			:= 0
+
 	Private cAlias          := GetNextAlias()
 	Private cCRLF           := CRLF
 	Private nMudaPag        := 0
@@ -70,6 +72,7 @@ User Function RelPc01()
 	Private aDIFAL          := {}
 	Private aAliqIcm        := {}
 	Private aTes            := {}
+	Private aObsPed			:= {}
 	Private oFont06         := nil
 	Private oFont06n        := nil
 	Private oFont08         := nil
@@ -236,23 +239,19 @@ User Function RelPc01()
 	TRB->(DbGoTop())
 	While TRB->(!Eof())
 		If !Empty(TRB->A2_OK)
+			aObsPed	:= {}
+			Q_MemoArray(TRB->C6_ZOBS, @aObsPed, 110)
 
+			nCont++
+			oPrinter:Box(nLin,000,nLin+30+(Len(aObsPed)*16),nColFim)
+			oPrinter:Say(nLin+10, 5, AllTrim(Str(nCont))+'º - '+AllTrim(TRB->C6_ZENTREG), oFont08n:oFont,,)
+			nLin += 16
 
-			//If nCont == 0 .AND. !Empty(SC5->C5_ZENTREG)
-				nCont++
-				oPrinter:Box(nLin,000,nLin+30,nColFim)
-				oPrinter:Say(nLin+10, 5, AllTrim(Str(nCont))+'º - '+AllTrim(TRB->C6_ZENTREG)+' '+AllTrim(TRB->C6_ZOBS), oFont08n:oFont,,)
+			For nPosObs := 1 To Len(aObsPed)
+				oPrinter:Say(nLin+10, 5, AllTrim(aObsPed[nPosObs]), oFont08n:oFont,,)
 				nLin += 16
-                /*/
-			Else
-				If !Empty(TRB->C6_ZOBS)
-					nCont++
-					oPrinter:Box(nLin,000,nLin+30,nColFim)
-					oPrinter:Say(nLin+10, 5, AllTrim(Str(nCont))+'º '+AllTrim(TRB->C6_ZOBS), oFont08n:oFont,,)
-					nLin += 16
-				EndIf
-			EndIf
-            /*/
+			Next nPosObs
+			
 		EndIf
 		TRB->(DbSkip())
 	End
@@ -347,6 +346,7 @@ Static Function MkCont()
 	aAdd(aCpos,{"C2_PRODUTO"})
 	aAdd(aCpos,{"B1_DESC"})
 	aAdd(aCpos,{"C2_QUANT"})
+	aAdd(aCpos,{"C2_ZQUANT"})
 	aAdd(aCpos,{"C6_ZQTDPLC"})
 	aAdd(aCpos,{"C6_ZPESO"})
 	aAdd(aCpos,{"C6_ZOBS"})
@@ -368,7 +368,7 @@ Static Function MkCont()
 
 	// Consulta dados
 	DbSelectArea('SC6')
-	cQuery := " SELECT SC6.R_E_C_N_O_ as REC, C2_NUM, C2_ITEM, C2_SEQUEN, C2_PRODUTO, C2_QUANT, C6_ZQTDPLC, C6_ZPESO,C6_ZENTREG "
+	cQuery := " SELECT SC6.R_E_C_N_O_ as REC, C2_NUM, C2_ITEM, C2_SEQUEN, C2_PRODUTO, C2_QUANT, C2_ZQUANT, C6_ZQTDPLC, C6_ZPESO,C6_ZENTREG "
 	cQuery += " FROM "+RetSqlName('SC2')+" SC2 "
 	cQuery += " LEFT JOIN "+RetSqlName('SC6')+" SC6 ON C2_PEDIDO=C6_NUM AND C2_ITEMPV=C6_ITEM AND SC6.D_E_L_E_T_='' "
 	cQuery += " WHERE C2_NUM='"+SC5->C5_NUM+"' AND SC2.D_E_L_E_T_='' ORDER BY C2_LINHA"
@@ -389,6 +389,7 @@ Static Function MkCont()
 		TRB->C2_PRODUTO := graf->C2_PRODUTO
 		TRB->B1_DESC    := Posicione("SB1",1,xFilial("SB1")+graf->C2_PRODUTO,"B1_DESC")
 		TRB->C2_QUANT   := graf->C2_QUANT
+		TRB->C2_ZQUANT	:= graf->C2_ZQUANT
 		TRB->C6_ZQTDPLC := graf->C6_ZQTDPLC
 		TRB->C6_ZPESO   := graf->C6_ZPESO
 		TRB->C6_ZENTREG := graf->C6_ZENTREG
