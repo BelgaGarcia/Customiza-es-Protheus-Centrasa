@@ -1,0 +1,50 @@
+#include "tlpp-core.th"
+#include "totvs.ch"
+// ?????????????????????????????????????????????
+// Função que executa NO SERVIDOR
+// Recebe os parâmetros enviados pelo FWExecInServer
+// ?????????????????????????????????????????????
+namespace custom.writelogs
+User Function WriteLogs(_cMessage)
+	Local cPath    := "" As Character
+	Local nHandle  := 0 As Numeric
+	Local lSucesso := .F. As Logical
+    Local cMessage := _cMessage As Character
+    Local cFName   := _cFName As Character
+	Local cArquivo := "custom.logs.txt" As Character
+
+	// Lê o RootPath diretamente do .ini do servidor
+	cPath := GetSrvProfString( "RootPath", "" )
+
+	If Empty( cPath )
+		ConOut( "[ExecNoServidor] ERRO: RootPath vazio!" )
+		Return( .F. )
+	EndIf
+
+	// Monta caminho final
+	cPath := AllTrim( cPath )
+	If !( Right( cPath, 1 ) $ "/\" )
+		cPath += "\"
+	EndIf
+	cPath += "system\" + AllTrim( cArquivo )
+
+	// Verifica se o diretório existe antes de criar
+	If !ExistDir( cPath )
+		ConOut( "[ExecNoServidor] AVISO: Diretório não existe: " + cPath )
+		ConOut( "[ExecNoServidor] AVISO: Criando arquivo de logs...")
+		// Cria o arquivo no servidor
+		nHandle := FCreate( cPath )
+	EndIf
+
+	If nHandle < 0
+		ConOut( "[ExecNoServidor] ERRO FCreate(" + cPath + "): " + CStr( FError() ) )
+		Return( .F. )
+	EndIf
+
+	FWrite( nHandle, cMessage )
+	FClose( nHandle )
+
+	lSucesso := .T.
+	ConOut( "[ExecNoServidor] Arquivo gravado: " + cPath )
+
+Return( lSucesso )

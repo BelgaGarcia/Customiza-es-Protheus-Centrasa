@@ -11,6 +11,7 @@ User Function AfterLogin()
     //fiscal.relatorios.u_notasSaida()
     //custom.relatorio.u_relatorioPorTipo()
     fiscal.relatorios.u_notasSaida()
+    custom.writelogs.WriteLogs("Login realizado com sucesso!")
     //u_FSPCPC01()
 Return
  
