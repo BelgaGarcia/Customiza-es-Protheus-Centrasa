@@ -63,8 +63,9 @@ Static Function queryBuscarOrigemNF()
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SD1") + CRLF
-	cQuery += " 		AND D1_TIPO		= 'N'" + CRLF
+	cQuery += " 		AND ( D1_TIPO = 'N' OR D1_TIPO = 'B' ) " + CRLF
 	cQuery += " 		AND D1_COD		= '"+AllTrim(cCodigoProduto)+"'" + CRLF
 	cQuery += " 		AND D1_LOTECTL	= '"+AllTrim(cLoteProduto)+"'" + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
+
 Return cQuery
