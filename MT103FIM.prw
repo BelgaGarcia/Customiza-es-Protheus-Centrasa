@@ -35,6 +35,9 @@ User Function MT103FIM()
 			compras.entrada.u_baixaTituloDacaoIndustrializacao()
 		Endif
 
+		If Findfunction("compras.entrada.u_origemPedidoVenda")
+			compras.entrada.u_origemPedidoVenda()
+		EndIf
 	ElseIf ( nOpcao == 4 ) .AND. ( nConfirma == 1 )
 		If ( lLigaBaixGer == .T. ) .And. (Findfunction("estoque.movimentointerno.u_Nfgerencial")) .And. (!Empty(SF1->F1_ZNFGER))
 			estoque.movimentointerno.u_Nfgerencial()

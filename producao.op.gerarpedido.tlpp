@@ -309,6 +309,22 @@ Static Function gravaPedidoArquivoTmp(oProcess)
 		dbSelectArea(cAliasCab)
 
 		For nRecord := 2 To Len(aRegArquivo)
+			aDadosArquivo 	:= Separa(aRegArquivo[nRecord],";",.T.)
+			Aadd(aDadosArquivo,"")
+
+			nRecordPed := 0
+			For nRecordPed := 1 To Len(aCamposItem)
+				If (aCamposItem[nRecordPed] == "PESO_PLANO")
+					nPosCampo 		:= aScan(aCabArquivo, { |x| Upper(Alltrim(x)) == aCamposItem[nRecordPed] })
+					
+					If nPosCampo > 0
+						nPesoTotalPlano	+= Val(aDadosArquivo[nPosCampo])
+					EndIf
+				EndIf
+			Next nRecordPed
+		Next nRecord
+
+		For nRecord := 2 To Len(aRegArquivo)
 
 			aDadosArquivo 	:= Separa(aRegArquivo[nRecord],";",.T.)
 			Aadd(aDadosArquivo,"")
@@ -413,11 +429,11 @@ Static Function gravaPedidoArquivoTmp(oProcess)
 								xValorCampo := ""
 							EndIf
 						ElseIf (aCamposItem[nRecordPed] == "QT_SISTEMA")
-							xValorCampo := aDadosNfOrigem[4]
+							xValorCampo := nPesoTotalPlano //aDadosNfOrigem[4]
 						ElseIf (aCamposItem[nRecordPed] == "C6_VALOR")
 							xValorCampo := aDadosNfOrigem[14] // Tratar Valor Exato SB6
 						ElseIf (aCamposItem[nRecordPed] == "C6_QTDLIB")
-							xValorCampo := Alltrim(Str(aDadosNfOrigem[4]))
+							xValorCampo := Alltrim(Str(nPesoTotalPlano /*aDadosNfOrigem[4]*/))
 						ElseIf (aCamposItem[nRecordPed] == "C6_PRCVEN")
 							xValorCampo := aDadosNfOrigem[5]
 						ElseIf (aCamposItem[nRecordPed] == "C6_IDENTB6")
@@ -603,7 +619,7 @@ Static Function gravaPedidoArquivoTmp(oProcess)
 
 					If ( Len(aDadosNfOrigem) > 0 )
 
-						nPesoTotalPlano += val(xValorCampo)
+						//nPesoTotalPlano += val(xValorCampo)
 
 						If nPesoTotalPlano > aDadosNfOrigem[11]
 							FWAlertError("Peso planejado: "+xValorCampo+" maior que o saldo da Bobina: "+Str(aDadosNfOrigem[11]),"Cadastro de Produto")
