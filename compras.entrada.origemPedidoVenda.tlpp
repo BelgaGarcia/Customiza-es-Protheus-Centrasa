@@ -1,0 +1,230 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace compras.entrada
+
+/*/{Protheus.doc} origemPedidoVenda
+
+Altera os dados da NF de origem no Pedido de Venda.
+
+@type Function
+@author Gabriel Goncalves
+@since 10/06/2026
+@version P12
+@database ORACLE
+
+/*/
+User Function origemPedidoVenda()
+	Private cAliasItens		:= ""	as character
+	Private cAliasPedido	:= ""	as character
+
+	If validaExecucao()
+		ajustaNotaOrigem()
+	EndIf
+Return
+
+/*
+	Valida Execução da rotina
+*/
+Static Function validaExecucao()
+	Local lRetorno		:= .F.	as logical
+
+	If SF1->F1_TIPO == "B"
+		lRetorno	:= buscaItensAptos()
+	EndIf
+Return lRetorno
+
+/*
+	Busca itens aptos
+*/
+Static Function buscaItensAptos()
+	Local lRetorno	:= .F.	as logical
+	Local cQuery	:= ""	as character
+
+	cQuery := 	queryBuscaItensAptos()
+
+	MPSysOpenQuery( cQuery, cAliasItens := GetNextAlias() )
+
+	(cAliasItens)->(DbGoTop())
+	If (cAliasItens)->(!EoF())
+		lRetorno	:= .T.
+	EndIf
+Return lRetorno
+
+/*
+	Query da Busca itens aptos
+*/
+Static Function queryBuscaItensAptos()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        D1_DOC "	+ CRLF
+	cQuery += "        ,D1_SERIE "	+ CRLF
+	cQuery += "        ,D1_ITEM "	+ CRLF
+	cQuery += "        ,D1_LOTECTL "	+ CRLF
+	cQuery += "        ,D1_COD "	+ CRLF
+	cQuery += "        ,D1_IDENTB6 "	+ CRLF
+	cQuery += "        ,D1_TES "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD1") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SF4") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SF4") + CRLF
+	cQuery += " 	    AND F4_CODIGO	= D1_TES " + CRLF
+	cQuery += " 	    AND F4_ESTOQUE	= 'N' " + CRLF
+	cQuery += " 	    AND F4_PODER3	= 'R' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SF4") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD1") + CRLF
+	cQuery += " 		AND D1_DOC		= '"+SF1->F1_DOC+"' " + CRLF
+	cQuery += " 		AND D1_SERIE	= '"+SF1->F1_SERIE+"' " + CRLF
+	cQuery += " 		AND D1_FORNECE	= '"+SF1->F1_FORNECE+"' " + CRLF
+	cQuery += " 		AND D1_LOJA		= '"+SF1->F1_LOJA+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD1") + CRLF
+Return cQuery
+
+/*
+	Ajusta Nota Origem
+*/
+Static Function ajustaNotaOrigem()
+	(cAliasItens)->(DbGoTop())
+	While (cAliasItens)->(!EoF())
+		If buscaPedidoVenda()
+			atualizaPedidoVenda()
+
+			(cAliasPedido)->(DbCloseArea())
+		EndIf
+
+		(cAliasItens)->(DbSkip())
+	EndDo
+
+	(cAliasItens)->(DbCloseArea())
+Return
+
+/*
+	Busca pedido de venda
+*/
+Static Function buscaPedidoVenda()
+	Local lRetorno	:= .F.	as logical
+	Local cQuery	:= ""	as character
+
+	cQuery := 	queryBuscaPedidoVenda()
+
+	MPSysOpenQuery( cQuery, cAliasPedido := GetNextAlias() )
+
+	(cAliasPedido)->(DbGoTop())
+	If (cAliasPedido)->(!EoF())
+		lRetorno	:= .T.
+	EndIf
+Return lRetorno
+
+/*
+	Query Busca pedido de venda
+*/
+Static Function queryBuscaPedidoVenda()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        C5_NUM "	+ CRLF
+	cQuery += "        ,C6_ITEM "	+ CRLF
+	cQuery += "        ,C6_PRODUTO "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC5") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += "     	1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 	    AND C6_NUM		= C5_NUM " + CRLF
+	cQuery += " 	    AND C6_CF		IN ('5925','6925') " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC5") + CRLF
+	cQuery += " 		AND C5_ZLOTCTL	= '"+(cAliasItens)->D1_LOTECTL+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC5") + CRLF
+Return cQuery
+
+/*
+	Atualiza pedido de venda com nota de origem
+*/
+Static Function atualizaPedidoVenda()
+	Local aCabecalho	:= {}	as array
+	Local aItens		:= {}	as array
+	Local aLinha		:= {}	as array
+	Local nCount		:= 0	as integer
+	Local cLogErro		:= ""	as character
+	Local aErroAuto		:= {}	as array
+	Local cOperacao		:= ""	as character
+
+	Private lMsErroAuto    := .F.
+	Private lMsHelpAuto    := .F.
+	Private lAutoErrNoFile := .T.
+
+	cOperacao	:= verificaOperacaoFiscal()
+
+	aAdd(aCabecalho, {"C5_NUM"	, (cAliasPedido)->C5_NUM	, Nil})
+
+	aAdd(aLinha, {"LINPOS"		, "C6_ITEM"						, (cAliasPedido)->C6_ITEM})
+	aAdd(aLinha, {"AUTDELETA"	, "N"							, Nil})
+	aAdd(aLinha, {"C6_PRODUTO"	, (cAliasPedido)->C6_PRODUTO	, Nil})
+	aAdd(aLinha, {"C6_OPER"		, cOperacao						, Nil})
+	aAdd(aLinha, {"C6_NFORI"	, (cAliasItens)->D1_DOC			, Nil})
+	aAdd(aLinha, {"C6_SERIORI"	, (cAliasItens)->D1_SERIE		, Nil})
+	aAdd(aLinha, {"C6_ITEMORI"	, (cAliasItens)->D1_ITEM		, Nil})
+	aAdd(aLinha, {"C6_IDENTB6"	, (cAliasItens)->D1_IDENTB6		, Nil})
+
+	aAdd(aItens, aLinha)
+
+	MSExecAuto({|a, b, c, d| MATA410(a, b, c, d)}, aCabecalho, aItens, 4, .F.)
+
+	If lMsErroAuto
+		cLogErro	:= "Erro na alteração do Pedido de Venda ("+(cAliasPedido)->C5_NUM+") "
+		aErroAuto	:= GetAutoGRLog()
+
+		For nCount := 1 To Len(aErroAuto)
+			cLogErro += StrTran(StrTran(aErroAuto[nCount], "<", ""), "-", "") + " "
+		Next nCount
+
+		ShowLog(cLogErro)
+	EndIf
+Return
+
+/*
+	Verifica Operação Fiscal
+*/
+Static Function verificaOperacaoFiscal()
+	Local cRetorno	:= ""	as character
+
+	Local cRetornoOperFiscalTriangularSemAtecipado := Alltrim(SuperGetMV("ZV_C6OPER1", .F., "")) as character	// Retorno operacao TRIANGULAR sem antecipado
+	Local cRetornoOperFiscalTriangularComAtecipado := Alltrim(SuperGetMV("ZV_C6OPER2", .F., "")) as character	// Retorno operacao TRIANGULAR com antecipado
+	Local cRetornoOperFiscalDireta                 := Alltrim(SuperGetMV("ZV_C6OPER4", .F., "")) as character	// Retorno operacao DIRETA
+
+	Local cTesOperacaoDireta					   := GetNewPar("FS_OPERDIR","092|101|102")	as character
+	Local cTesOperacaoTriangularSemAntecipado	   := GetNewPar("FS_OPERTSA","091|099|100")	as character
+	Local cTesOperacaoTriangularComAntecipado	   := GetNewPar("FS_OPERTCA","095|103|104")	as character
+
+	If (cAliasItens)->D1_TES $ (cTesOperacaoDireta) // Operação BN Direta
+		cRetorno := cRetornoOperFiscalDireta
+
+	ElseIf (cAliasItens)->D1_TES $ (cTesOperacaoTriangularSemAntecipado) // Operação BN Triangular sem antecipado
+		cRetorno := cRetornoOperFiscalTriangularSemAtecipado
+
+	ElseIf (cAliasItens)->D1_TES $ (cTesOperacaoTriangularComAntecipado) // Operação BN Triangular com antecipado
+		cRetorno := cRetornoOperFiscalTriangularComAtecipado
+
+	Else
+		cRetorno := cRetornoOperFiscalTriangularSemAtecipado
+	EndIf
+Return cRetorno
