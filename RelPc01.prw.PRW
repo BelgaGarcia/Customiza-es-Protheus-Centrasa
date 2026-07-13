@@ -371,7 +371,7 @@ Static Function MkCont()
 	cQuery := " SELECT SC6.R_E_C_N_O_ as REC, C2_NUM, C2_ITEM, C2_SEQUEN, C2_PRODUTO, C2_QUANT, C2_ZQUANT, C6_ZQTDPLC, C6_ZPESO,C6_ZENTREG "
 	cQuery += " FROM "+RetSqlName('SC2')+" SC2 "
 	cQuery += " LEFT JOIN "+RetSqlName('SC6')+" SC6 ON C2_PEDIDO=C6_NUM AND C2_ITEMPV=C6_ITEM AND SC6.D_E_L_E_T_='' "
-	cQuery += " WHERE C2_NUM='"+SC5->C5_NUM+"' AND SC2.D_E_L_E_T_='' ORDER BY C2_LINHA"
+	cQuery += " WHERE C2_NUM='"+SC5->C5_NUM+"' AND SC2.D_E_L_E_T_='' ORDER BY C2_LINHA, C2_ITEM"
 	cQuery := ChangeQuery(cQuery)
 
 	dbUseArea(.T.,"TOPCONN",TcGenQry(,,cQuery),"graf")

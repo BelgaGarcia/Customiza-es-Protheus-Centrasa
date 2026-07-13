@@ -26,7 +26,7 @@ User Function PE01NFESEFAZ()
 
 		// Adiciona as mensagens customizadas da quarta nota
 		If FindFunction("faturamento.nf.dadosComplementares.u_quartaNota")
-			aRetorno[2]	:= aRetorno[2] + "  " + aRetorno[3] + ' ' + faturamento.nf.dadosComplementares.u_quartaNota(aRetorno[1])
+			aRetorno	:= faturamento.nf.dadosComplementares.u_quartaNota(aRetorno)
 		EndIf
 
 		// Realiza tratamento do icms diferido - OBS: DEVE SER A PRIMEIRA MSG

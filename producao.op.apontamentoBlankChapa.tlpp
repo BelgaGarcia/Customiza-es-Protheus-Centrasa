@@ -883,7 +883,7 @@ Static Function gravaApontamento()
 									{"H6_DTVALID"	,	aLoteProduzido[2]			,	NIL},;
 									{"H6_LOCAL"		,	(cAliasTela)->C2_LOCAL		,	NIL}} //Armaz m padr o C2_LOCAL;
 
-								If SB1->B1_UM $ "KG|TL"
+								If SB1->B1_UM $ "KG|TL|T "
 									aAdd(aVetorSH6, {"H6_QTDPROD"	,	(cAlias)->Z3_PESOLIQ	,	NIL})
 									aAdd(aVetorSH6, {"H6_ZQUANT"	,	(cAlias)->Z3_QTDPECA	,	NIL})
 									aAdd(aVetorSH6, {"H6_ZPESOBT"	,	(cAlias)->Z3_PESOBRU	,	NIL})
@@ -1368,7 +1368,7 @@ Static Function baixarEmpenho()
 		Begin Sequence	///(cAliasTela)->C2_PRODUTO
 			SB1->(DbSeek(xFilial("SB1") + (cSD4Alias)->D4_COD))
 
-			If SB1->B1_UM $ "KG|TL"
+			If SB1->B1_UM $ "KG|TL|T "
 				nQtdBaixa := SZ3->Z3_PESOLIQ
 			Else
 				If (AllTrim(SB1->B1_GRUPO) + SB1->B1_ZSUBGRU) $ cGrupoChapa

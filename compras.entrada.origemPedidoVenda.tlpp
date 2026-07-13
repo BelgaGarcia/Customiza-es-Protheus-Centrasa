@@ -31,7 +31,7 @@ Return
 Static Function validaExecucao()
 	Local lRetorno		:= .F.	as logical
 
-	If SF1->F1_TIPO == "B"
+	If SF1->F1_TIPO == "B" .And. !FWIsInCallStack("compras.entrada.u_DevolucaoIndustrializacao")
 		lRetorno	:= buscaItensAptos()
 	EndIf
 Return lRetorno
@@ -67,6 +67,7 @@ Static Function queryBuscaItensAptos()
 	cQuery += "        ,D1_COD "	+ CRLF
 	cQuery += "        ,D1_IDENTB6 "	+ CRLF
 	cQuery += "        ,D1_TES "	+ CRLF
+	cQuery += "        ,D1_VUNIT "	+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SD1") + CRLF
@@ -136,6 +137,7 @@ Static Function queryBuscaPedidoVenda()
 	cQuery += "        C5_NUM "	+ CRLF
 	cQuery += "        ,C6_ITEM "	+ CRLF
 	cQuery += "        ,C6_PRODUTO "	+ CRLF
+	cQuery += "        ,C6_QTDVEN "	+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SC5") + CRLF
@@ -167,18 +169,23 @@ Static Function atualizaPedidoVenda()
 	Local cLogErro		:= ""	as character
 	Local aErroAuto		:= {}	as array
 	Local cOperacao		:= ""	as character
+	Local nTotalItem	:= 0	as numeric
 
 	Private lMsErroAuto    := .F.
 	Private lMsHelpAuto    := .F.
 	Private lAutoErrNoFile := .T.
 
 	cOperacao	:= verificaOperacaoFiscal()
+	nTotalItem	:= Round( (cAliasPedido)->C6_QTDVEN * (cAliasItens)->D1_VUNIT, 2 )
 
 	aAdd(aCabecalho, {"C5_NUM"	, (cAliasPedido)->C5_NUM	, Nil})
 
 	aAdd(aLinha, {"LINPOS"		, "C6_ITEM"						, (cAliasPedido)->C6_ITEM})
 	aAdd(aLinha, {"AUTDELETA"	, "N"							, Nil})
 	aAdd(aLinha, {"C6_PRODUTO"	, (cAliasPedido)->C6_PRODUTO	, Nil})
+	aAdd(aLinha, {"C6_PRCVEN"	, (cAliasItens)->D1_VUNIT		, Nil})
+	aAdd(aLinha, {"C6_PRUNIT"	, (cAliasItens)->D1_VUNIT		, Nil})
+	aAdd(aLinha, {"C6_VALOR"	, nTotalItem					, Nil})
 	aAdd(aLinha, {"C6_OPER"		, cOperacao						, Nil})
 	aAdd(aLinha, {"C6_NFORI"	, (cAliasItens)->D1_DOC			, Nil})
 	aAdd(aLinha, {"C6_SERIORI"	, (cAliasItens)->D1_SERIE		, Nil})

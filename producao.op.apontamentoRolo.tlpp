@@ -858,7 +858,7 @@ Static Function gravaApontamento()
 									{"H6_DTVALID"	,	aLoteProduzido[2]			,	NIL},;
 									{"H6_LOCAL"		,	(cAliasTela)->C2_LOCAL		,	NIL}} //Armazém padrão C2_LOCAL;
 
-								If SB1->B1_UM $ "KG|TL"
+								If SB1->B1_UM $ "KG|TL|T "
 									aAdd(aVetorSH6, {"H6_QTDPROD"	,	(cAlias)->Z4_PESOLIQ	,	NIL})
 									aAdd(aVetorSH6, {"H6_ZQUANT"	,	(cAlias)->Z4_QTDPECA	,	NIL})
 									aAdd(aVetorSH6, {"H6_ZPESOBT"	,	(cAlias)->Z4_PESOBRU	,	NIL})
@@ -1038,10 +1038,10 @@ Static Function baixarEmpenho()
 		Begin Sequence	///(cAliasTela)->C2_PRODUTO
 			SB1->(DbSeek(xFilial("SB1") + (cSD4Alias)->D4_COD))
 
-			If SB1->B1_UM $ "KG|TL"
-				nQtdBaixa := SZ4->Z4_PESOLIQ
+			If SB1->B1_UM $ "KG|TL|T "
+				nQtdBaixa := (cAlias)->Z4_PESOLIQ
 			Else
-				nQtdBaixa := SZ4->Z4_QTDPECA
+				nQtdBaixa := (cAlias)->Z4_QTDPECA
 			EndIf
 
 			aCabecSD3 :={{"D3_DOC" , Substr((cAliasTela)->TMP_ORDEM,1,6)+cSeqOP , NIL},;

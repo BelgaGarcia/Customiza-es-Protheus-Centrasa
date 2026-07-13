@@ -240,7 +240,7 @@ Static Function transferenciaDeLote(nPosLote)
 	DbSetOrder(1)
 	DbSeek(xFilial("SB1")+(cAliasTela)->C2_PRODUTO)
 
-	If SB1->B1_UM $ "KG|TL"
+	If SB1->B1_UM $ "KG|TL|T "
 		nQuantidade	:= oListaLotes:aArray[nPosLote,5]
 	Else
 		nQuantidade	:= oListaLotes:aArray[nPosLote,4]

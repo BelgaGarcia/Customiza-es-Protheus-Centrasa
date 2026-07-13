@@ -7021,9 +7021,13 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 										aDeson		:= aParam[34]
 										aTotalItem	:= aParam[35]
 									EndIf
+
+									// Altera a natureza da nota
+									If FindFunction("faturamento.nf.u_alteraNatureza")
+										cNatOper	:= faturamento.nf.u_alteraNatureza(cNatOper)
+									EndIf
 								EndIf
 								//DSM Fim
-
 
 								aParam := {aProd,cMensCli,cMensFis,aDest,aNota,aInfoItem,aDupl,aTransp,aEntrega,aRetirada,aVeiculo,aReboque,aNfVincRur,aEspVol,aNfVinc,aDetPag,aObsCont,aProcRef,aMed,aLote}
 

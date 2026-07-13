@@ -847,12 +847,15 @@ Static Function atualizaOPFilha(oProcess, nPesoLiquido)
 	Local cMensagem	:= ""
 	Local aErroAuto	:= {}
 	Local aAreaSD4	:= SD4->(FWGetArea())
+	Local aAreaSB1	:= SB1->(FWGetArea())
 
 	oProcess:IncRegua2("Atualizando Ordem Produção - Filha")
 
 	SC2->(DbSetOrder(1)) //FILIAL + NUM + ITEM + SEQUEN + ITEMGRD
 	If SC2->(DbSeek(xFilial("SC2")+SD4->D4_OP))
-		If SC2->C2_QUANT <> nPesoLiquido
+		SB1->(DbSeek(FwxFilial("SB1")+SC2->C2_PRODUTO))
+
+		If SC2->C2_QUANT <> nPesoLiquido .And. SB1->B1_UM == "KG"
 			aadd(aAutoCab, {"C2_FILIAL" , FwxFilial("SC2")		, NIL})
 			aadd(aAutoCab, {"C2_NUM"    , SC2->C2_NUM			, ".T."})
 			aadd(aAutoCab, {"C2_ITEM"   , SC2->C2_ITEM			, ".T."})
@@ -880,6 +883,7 @@ Static Function atualizaOPFilha(oProcess, nPesoLiquido)
 		EndIf
 	EndIf
 
+	FWRestArea(aAreaSB1)
 	FWRestArea(aAreaSD4)
 Return lRetorno
 
@@ -1178,7 +1182,7 @@ Static Function getAutoCab(cOpcao)
 		SB1->(DbSetOrder(1))
 		If SB1->(DbSeek(FwxFilial("SB1")+SC6->C6_PRODUTO ))
 			cRevisao := IIF(lPCPREVATU , PCPREVATU(SB1->B1_COD), SB1->B1_REVATU )
-			If (SB1->B1_UM $ "KG|TL")
+			If (SB1->B1_UM $ "KG|TL|T ")
 				If  SC6->C6_ZPESO > 0
 					nQuantidadeOrdem := SC6->C6_ZPESO // Para itens peso sempre observar o peso do plano de corte
 				Endif

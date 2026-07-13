@@ -16,12 +16,13 @@ Dados complementares na NF (Quarta Nota e Nota Usina).
 @database MSSQL
 
 /*/
-User Function quartaNota(aProd)
+User Function quartaNota(aDadosNF)
 	Local nPosProduto			:= 0	as integer
 	
-	Private cMensagemRetorno			:= ""	as character
+	Private aRetorno					:= aDadosNF	as array
 	Private cNumeroQuartaNota			:= ""	as character
 	Private dDataQuartaNota				:= StoD("")	as date
+	Private cItemQuartaNota				:= ""	as character
 	Private dDataNotaEntrada			:= StoD("")	as date
 	Private cNumeroNotaUsina			:= ""	as character
 	Private cSerieUsina					:= ""	as character
@@ -41,7 +42,7 @@ User Function quartaNota(aProd)
 	Private cLojaRefaturamento			:= ""	as character
 	Private cPedidoOriginal				:= ""	as character
 	Private cCFOPMensagem				:= ""	as character
-	Private aProdutos					:= aProd	as array
+	Private aProdutos					:= aRetorno[1]	as array
 	Private nProduto					:= 0	as integer
 	Private cMensagemFiscal				:= ""	as character
 	Private cMensagemComercial			:= ""	as character
@@ -57,11 +58,13 @@ User Function quartaNota(aProd)
 			notaUsina()
 			dadosQuartaNota()
 			montaMensagem()
+			montaInformacaoAdicional()
+			alteraDadosLote()
 		Next nPosProduto
 
-		cMensagemRetorno	:= cMensagemFiscal + cMensagemComercial + "."
+		aRetorno[2]	:= aRetorno[2] + cMensagemFiscal + cMensagemComercial + "."
 	EndIf
-Return cMensagemRetorno
+Return aRetorno
 
 /*
 	Monta Mensagem de retorno
@@ -157,18 +160,40 @@ Static Function montaMensagemComercial()
 
 	If cCFOPMensagem $ "124/125/902/925"
 		cRetorno	+= "(ITEM "+cItemNota+") "
-		cRetorno	+= "NF.:" + IIF(Empty(cNumeroNotaUsina), cNumeroQuartaNota, cNumeroNotaUsina)
+		cRetorno	+= "NF.:" + IIF(Empty(cNumeroQuartaNota), cNumeroNotaUsina, cNumeroQuartaNota)
 		cRetorno	+= "/No.Inspecao: " + AllTrim(cNumeroInspecao)
 		cRetorno	+= "/DATA: " + DtoC(dDataNotaEntrada) //IIF(Empty(dDataQuartaNota), "", DtoC(dDataQuartaNota))
 		cRetorno	+= ValPaXPeso()
 		cRetorno	+= "/Cod.Bob.: " + AllTrim(cLoteBobina)
-		cRetorno	+= "/NF.Ent.: " + IIF(Empty(cNumeroQuartaNota), cNumeroNotaUsina, cNumeroQuartaNota)
+		cRetorno	+= "/NF.Ent.: " + IIF(Empty(cNumeroNotaUsina), cNumeroQuartaNota, cNumeroNotaUsina)
 
 		If cCFOPMensagem $ "124/125" //Empty(aProdutos[nProduto][39])
 			cRetorno	+= "/Lotes: " + informacaoLotes()
 		EndIf
 	EndIf
 Return cRetorno
+
+/*
+	Monta informação adicional
+*/
+Static Function montaInformacaoAdicional()
+	If !Empty(cNumeroQuartaNota)
+		aRetorno[1][nProduto][25]	:= "NF:" + cNumeroQuartaNota + " ITEM:" + cItemQuartaNota
+	EndIf
+Return()
+
+/*
+	Altera dados do lote
+*/
+Static Function alteraDadosLote()
+	If !Empty(aRetorno[20][nProduto])
+		If !Empty(aRetorno[20][nProduto][1])
+			aRetorno[20][nProduto][1]	:= cNumeroInspecao
+			aRetorno[20][nProduto][3]	:= SF2->F2_EMISSAO
+			aRetorno[20][nProduto][4]	:= SF2->F2_EMISSAO
+		EndIf
+	EndIf
+Return
 
 /*
 	Nota da Usina
@@ -287,6 +312,11 @@ Static Function dadosQuartaNota()
 	If (cAlias)->(!EoF())
 		cNumeroQuartaNota	:= (cAlias)->D1_DOC
 		dDataQuartaNota		:= StoD((cAlias)->D1_EMISSAO)
+		cItemQuartaNota		:= (cAlias)->D1_ITEM
+	Else
+		cNumeroQuartaNota	:= ""
+		dDataQuartaNota		:= StoD("")
+		cItemQuartaNota		:= ""
 	EndIf
 
 	(cAlias)->(DbCloseArea())
@@ -301,6 +331,7 @@ Static Function queryDadosQuartaNota()
 	cQuery += " SELECT " + CRLF
 	cQuery += "        D1_DOC "		+ CRLF
 	cQuery += "        ,D1_EMISSAO "		+ CRLF
+	cQuery += "        ,D1_ITEM "		+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SDH") + CRLF

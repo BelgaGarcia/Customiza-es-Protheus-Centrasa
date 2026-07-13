@@ -356,13 +356,13 @@ User Function whenh601()
 		Do Case
 		Case M->H6_OPERAC == "01"
 			lEditar := .F.
-			If !(SB1->B1_UM $("KG|TL"))
+			If !(SB1->B1_UM $ ("KG|TL|T "))
 				M->H6_ZPESO := 1
 			Else
 				M->H6_ZPESO := 0
 			EndIf
 		Case M->H6_OPERAC == "02"
-			If !(SB1->B1_UM $("KG|TL"))
+			If !(SB1->B1_UM $ ("KG|TL|T "))
 				lEditar := .T.
 			EndIf
 		End Case
@@ -387,13 +387,13 @@ User Function whenh602()
 		Do Case
 		Case M->H6_OPERAC == "01"
 			lEditar := .F.
-			If !(SB1->B1_UM $("KG|TL"))
+			If !(SB1->B1_UM $ ("KG|TL|T "))
 				M->H6_ZPESOBT := 1
 			Else
 				M->H6_ZPESOBT := 0
 			EndIf
 		Case M->H6_OPERAC == "02"
-			If !(SB1->B1_UM $("KG|TL"))
+			If !(SB1->B1_UM $ ("KG|TL|T "))
 				lEditar := .T.
 			EndIf
 		End Case
@@ -418,13 +418,13 @@ User Function whenh603()
 		Do Case
 		Case M->H6_OPERAC == "01"
 			lEditar := .F.
-			If (SB1->B1_UM $("KG|TL"))
+			If (SB1->B1_UM $ ("KG|TL|T "))
 				M->H6_ZQUANT := 1
 			Else
 				M->H6_ZQUANT := 0
 			EndIf
 		Case M->H6_OPERAC == "02"
-			If (SB1->B1_UM $("KG|TL"))
+			If (SB1->B1_UM $ ("KG|TL|T "))
 				lEditar := .T.
 			EndIf
 		End Case
@@ -638,7 +638,7 @@ User Function fAddItemPedidoVendaProducao()
 						If SA7->(DbSeek(FwxFilial("SA7")+SC5->C5_CLIENTE+SC5->C5_LOJACLI+SH6->H6_PRODUTO))
 							If SA7->A7_ZUMNFE == "KG"
 								nValorUnitario	:= (SH6->H6_ZPESO * SA7->A7_ZVLRUN) / SH6->H6_QTDPROD
-							ElseIf SA7->A7_ZUMNFE == "TL"
+							ElseIf SA7->A7_ZUMNFE $ "TL|T "
 								nValorUnitario	:= ((SH6->H6_ZPESO / 1000) * SA7->A7_ZVLRUN) / SH6->H6_QTDPROD
 							EndIf
 						EndIf
@@ -661,7 +661,7 @@ User Function fAddItemPedidoVendaProducao()
 						aadd(aLinha, {"C6_NUMPCOM", cPedidoCliente        , Nil})
 						aadd(aLinha, {"C6_ITEMPC" , cItPedidoCliente      , Nil})
 
-						If SB1->B1_UM $ "KG|TL"
+						If SB1->B1_UM $ "KG|TL|T "
 							aadd(aLinha, {"C6_ZPESO"  , SH6->H6_QTDPROD , Nil})
 							aadd(aLinha, {"C6_ZPESOBT", SH6->H6_ZPESOBT , Nil})
 						Else

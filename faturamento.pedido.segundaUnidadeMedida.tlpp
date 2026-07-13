@@ -53,7 +53,7 @@ Static Function buscarProdutoXCliente()
 				aCols[n][nPosZQTDNFE]	:= IIF(cCampo == "M->C6_QTDVEN", M->C6_QTDVEN, aCols[n][nPosQTDVEN])
 				aCols[n][nPosZVLRNFE]	:= (cAlias)->A7_ZVLRUN
 
-				If (cAlias)->A7_ZUMNFE $ "KG|TL"
+				If (cAlias)->A7_ZUMNFE $ "KG|TL|T "
 					aCols[n][nPosZQTDNFE]	:= IIF(cCampo == "M->C6_ZPESO", M->C6_ZPESO, aCols[n][nPosZPESO])
 				EndIf
 

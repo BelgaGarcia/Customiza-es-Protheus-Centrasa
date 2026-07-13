@@ -1,0 +1,75 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace faturamento.nf
+
+/*/{Protheus.doc} alteraNatureza
+
+Altera a natureza da nota
+
+@type Function
+@author Gabriel Goncalves
+@since 03/07/2026
+@version P12
+@database MSSQL
+
+/*/
+User Function alteraNatureza(cNatOper)
+	Private cRetorno	:= cNatOper	as character
+
+	validaNatureza()
+Return cRetorno
+
+/*
+	Valida natureza da nota
+*/
+Static Function validaNatureza()
+	Local cQuery	:= ""	as character
+	Local cAlias
+
+	cQuery := 	queryValidaNatureza()
+
+	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
+
+	(cAlias)->(DbGoTop())
+	While (cAlias)->(!EoF())
+		If "EFETUADA" $ (cAlias)->F4_TEXTO
+			cRetorno	:= (cAlias)->F4_TEXTO
+		EndIf
+
+		(cAlias)->(DbSkip())
+	EndDo
+
+	(cAlias)->(DbCloseArea())
+Return
+
+/*
+	Query buscar as naturezas da nota
+*/
+Static Function queryValidaNatureza()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        F4_TEXTO "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SD2") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SF4") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("SF4") + CRLF
+	cQuery += " 	    AND F4_CODIGO	= D2_TES " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SF4") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SD2") + CRLF
+	cQuery += " 		AND D2_DOC		= '"+SF2->F2_DOC+"' " + CRLF
+	cQuery += " 		AND D2_SERIE	= '"+SF2->F2_SERIE+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SD2") + CRLF
+
+	cQuery += " GROUP BY F4_TEXTO " + CRLF
+Return cQuery

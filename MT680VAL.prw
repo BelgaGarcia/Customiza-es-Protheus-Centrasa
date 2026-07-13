@@ -16,7 +16,7 @@ User Function MT680VAL()
 			DbSelectArea("SB1")
 			SB1->(DbSetORder(1))
 			SB1->(DbSeek(FwxFilial("SB1")+M->H6_PRODUTO))
-			If (SB1->B1_UM $("KG|TL"))
+			If (SB1->B1_UM $("KG|TL|T "))
 
 				If M->H6_ZQUANT > 0
 					lTudoOk := .T.

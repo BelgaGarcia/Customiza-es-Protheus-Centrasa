@@ -32,7 +32,7 @@ User Function origemProdutoEntrada()
 
 	aColsTmp := aCols
 
-	cIdBobina := SC5->C5_ZLOTCTL
+	cIdBobina := Iif(Inclui == .T.,M->C5_ZLOTCTL,SC5->C5_ZLOTCTL)
 
 	For nRecord := 1 To Len(aCols)
 		cCodigoProduto		:= aCols[nRecord,nPosProduto]
