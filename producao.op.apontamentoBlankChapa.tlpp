@@ -45,6 +45,8 @@ User Function apontamentoBlankChapa(cAlias, nRegistro)
 	Private cFlechaLIE				:= ""	as character
 	Private cFlechaLSE				:= ""	as character
 
+	Private lApontamentoFinal		:= .F.	as logical
+
 	montaTelaApontamento()
 Return
 
@@ -137,10 +139,11 @@ Static Function montaListaOperacoes()
 	aAdd( aHeader,	{"Aspecto.Visual"			,"XX_ASPVISU"	,""					,01,0,"AllwaysTrue()","","C","","R","S=OK;N=N OK","",""}	)
 	aAdd( aHeader,	{"Aprovado/Reprovado"		,"XX_APROVAD"	,""					,01,0,"AllwaysTrue()","","C","","R","D=Digitando;A=Aprovado;R=Reprovado","'D'",""}	)
 	aAdd( aHeader,	{"Qtde.Pecas"				,"XX_QTDPECA"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
+	aAdd( aHeader,	{"Lote Empenho"				,"XX_LOTEEMP"	,""					,13,0,"AllwaysTrue()","","C","","R","","",""}	)
 	aAdd( aHeader,	{"Peso.Bruto"				,"XX_PESOBRU"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
 	aAdd( aHeader,	{"Peso.Liquido"				,"XX_PESOLIQ"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
-	aAdd( aHeader,	{"Lote Empenho"				,"XX_LOTEEMP"	,""					,13,0,"AllwaysTrue()","","C","","R","","",""}	)
-	aAdd( aHeader,	{"Conforme.Solicitado?"		,"XX_SOLICIT"	,""					,01,0,"AllwaysTrue()",""                                   ,"C","","R","S=Sim;N=Nao","",""}	)
+	aAdd( aHeader,	{"Saldo OK?"				,"XX_SALDOOK"	,""					,01,0,"AllwaysTrue()","","C","","R","S=OK;N=N OK","N",""}	)
+	aAdd( aHeader,	{"Conforme.Solicitado?"		,"XX_SOLICIT"	,""					,01,0,"AllwaysTrue()","","C","","R","S=Sim;N=Nao","",""}	)
 	aAdd( aHeader,	{"RecnoSZ3"					,;
 		"XX_RECNO"		,;
 		""					,;
@@ -403,9 +406,10 @@ Static Function buscarApontamentos()
 			(cAlias)->Z3_ASPVISU,;
 			(cAlias)->Z3_APROVAD,;
 			(cAlias)->Z3_QTDPECA,;
+			(cAlias)->Z3_LOTEEMP,;
 			(cAlias)->Z3_PESOBRU,;
 			(cAlias)->Z3_PESOLIQ,;
-			(cAlias)->Z3_LOTEEMP,;
+			(cAlias)->Z3_SALDOOK,;
 			(cAlias)->Z3_SOLICIT,;
 			(cAlias)->R_E_C_N_O_,;
 			(cAlias)->Z3_APONTOK,;
@@ -494,11 +498,10 @@ User Function validaFieldBlankChapa()
 	Local lRetorno				:= .T.	as logical
 	Local cUltimoApontamento	:= "00"	as character
 	Local nItemGrid				:= 0	as integer
-	Local nPosdgt:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })
-	Local nPosPsl:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOLIQ"    })
-	Local nPosPbr:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOBRU"    })
-
-
+	Local nPosdgt				:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })
+	Local nPosPsl				:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOLIQ"    })
+	Local nPosPbr				:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOBRU"    })
+	Local nPosSaldoOK			:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_SALDOOK"    })
 
 	Private cCampo	:= ReadVar()	as character
 
@@ -507,16 +510,16 @@ User Function validaFieldBlankChapa()
 		FWAlertWarning("A primeira linha não pode ser editada, somente consulta das informações.", "Linha de Consulta")
 	ElseIf oGridApontamento:aCols[oGridApontamento:nAt][nPosdgt] == "S"
 		lRetorno	:= .F.
-		FWAlertWarning("Apontamento j  realizado para essa linha, não pode ser editada.", "Apontamento Realizado")
+		FWAlertWarning("Apontamento já realizado para essa linha, não pode ser editada.", "Apontamento Realizado")
 	Else
 		Do Case
 		Case cCampo == "M->XX_OPERAC"
 			If oGridApontamento:nAt == 2 .And. !(XX_OPERAC == "ST")
 				lRetorno	:= .F.
-				FWAlertWarning("A primeira opera  o deve ser o SETUP.", "SETUP")
+				FWAlertWarning("A primeira operação deve ser o SETUP.", "SETUP")
 			ElseIf oGridApontamento:nAt > 2 .And. XX_OPERAC == "ST"
 				lRetorno	:= .F.
-				FWAlertWarning("SETUP s  pode ser a primeira opera  o.", "SETUP")
+				FWAlertWarning("SETUP só pode ser a primeira operação.", "SETUP")
 			ElseIf !(XX_OPERAC $ "ST/SD")
 				For nItemGrid := 2 To oGridApontamento:nAt-1
 					If !(oGridApontamento:aCols[nItemGrid][1] $ "ST/SD") .And. !(oGridApontamento:aCols[nItemGrid][Len(oGridApontamento:aCols[nItemGrid])])
@@ -526,20 +529,20 @@ User Function validaFieldBlankChapa()
 
 				If !(Soma1(cUltimoApontamento) == XX_OPERAC)
 					lRetorno	:= .F.
-					FWAlertWarning("Opera  o fora da sequ ncia.", "Opera  o")
+					FWAlertWarning("Operação fora da sequência.", "Operação")
 				EndIf
 			EndIf
 
 		Case cCampo == "M->XX_DATA"
 			If !(XX_DATA == Date())
 				lRetorno	:= .F.
-				FWAlertWarning("Data inv lida para apontamento.", "Data")
+				FWAlertWarning("Data inválida para apontamento.", "Data")
 			EndIf
 
 		Case cCampo == "M->XX_HORARIO"
 			If !(AtVldHora(XX_HORARIO))
 				lRetorno	:= .F.
-				FWAlertWarning("Hor rio inv lido.", "Hora")
+				FWAlertWarning("Horário inválido.", "Hora")
 			EndIf
 
 		Case cCampo == "M->XX_CODMIC"
@@ -588,9 +591,20 @@ User Function validaFieldBlankChapa()
 		Case cCampo == "M->XX_PESOLIQ"
 			If XX_PESOLIQ < 0
 				lRetorno	:= .F.
-			ElseIf oGridApontamento:aCols[oGridApontamento:nAt][nPosPbr] > 0 .And. oGridApontamento:aCols[oGridApontamento:nAt][nPosPbr] < XX_PESOLIQ
-				lRetorno	:= .F.
-				FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
+			ElseIf oGridApontamento:aCols[oGridApontamento:nAt][nPosPbr] > 0
+				If oGridApontamento:aCols[oGridApontamento:nAt][nPosPbr] < XX_PESOLIQ
+					lRetorno	:= .F.
+					FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
+				EndIf
+
+				lApontamentoFinal	:= .F.
+
+				If validaSaldoPeso()
+					oGridApontamento:aCols[oGridApontamento:nAt][nPosSaldoOK]	:= "S"
+				Else
+					oGridApontamento:aCols[oGridApontamento:nAt][nPosSaldoOK]	:= "N"
+					FWAlertWarning("Peso liquido maior que o saldo disponivel para uso.", "Saldo Peso")
+				EndIf
 			EndIf
 
 		EndCase
@@ -608,7 +622,7 @@ User Function validaLinhaBlankChapa()
 
 		If oGridApontamento:aCols[oGridApontamento:nAt][20] == "D"
 			lRetorno	:= .F.
-			FWAlertWarning("Linha ainda em digita  o.", "Digita  o")
+			FWAlertWarning("Linha ainda em digitação.", "Digitação")
 		EndIf
 	EndIf
 Return lRetorno
@@ -618,19 +632,17 @@ Return lRetorno
 	Validacoes da linha no tudo ok
 */
 User Function validaLinhaBlanktudook(ctipo)
-	Local	lRetorno	:= .T.	as logical
+	Local lRetorno	:= .T.	as logical
 	Local nx:=1
 	Local nPesob	:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOBRU"    })
 	Local nPesol	:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_PESOLIQ"    })
 
 	for nx:=2 to len(oGridApontamento:aCols)
-
 		IF  SUBSTR(oGridApontamento:aCols[nx][1], 1, 1) <> "S" .and. ctipo == "A"
 			IF  oGridApontamento:aCols[nx][nPesob] <= 0
 				FWAlertWarning("Peso bruto menor ou igual a zero.", "Peso")
 				Return .F.
 			EndIf
-
 
 			IF  oGridApontamento:aCols[nx][nPesol] <= 0
 				FWAlertWarning("Peso liquido menor ou igual a zero.", "Peso")
@@ -638,17 +650,15 @@ User Function validaLinhaBlanktudook(ctipo)
 			Endif
 		EndIf
 
-
 		atualizaStatus(nx)
+
 		If oGridApontamento:aCols[nx][20] == "D"
 			lRetorno	:= .F.
-			FWAlertWarning("Linha ainda em digita  o.", "Digita  o")
+			FWAlertWarning("Linha ainda em digitação.", "Digitação")
 			nx:=len(oGridApontamento:aCols)
 		EndIf
-
 	next nx
 Return lRetorno
-
 
 /*
 	Atualiza status da linha
@@ -715,9 +725,10 @@ Return
 */
 Static Function compararMedicao(cValor, cInferior, cSuperior)
 	Local lRetorno	:= .F.	as logical
-	cValor:=strtran(cValor,',','.')
-	cInferior:=strtran(cInferior,',','.')
-	cSuperior:=strtran(cSuperior,',','.')
+
+	cValor		:= StrTran(cValor,',','.')
+	cInferior	:= StrTran(cInferior,',','.')
+	cSuperior	:= StrTran(cSuperior,',','.')
 
 	If Val(AllTrim(cValor)) >= Val(AllTrim(cInferior)) .And. Val(AllTrim(cValor)) <= Val(AllTrim(cSuperior))
 		lRetorno	:= .T.
@@ -730,16 +741,18 @@ Return lRetorno
 Static Function salvaApontamento()
 	Local nItemGrid		:= 0	as integer
 	Local lNovoRegistro	:= .T.	as logical
-	Local nPosdgt:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })
+	Local nPosdgt		:= aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })	as integer
+	Local nPosRecno		:= aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_RECNO"    })	as integer
+
 	DbSelectArea("SZ3")
 
 	For nItemGrid := 2 To Len(oGridApontamento:aCols)
-		If Empty(oGridApontamento:aCols[nItemGrid][26])
+		If Empty(oGridApontamento:aCols[nItemGrid][nPosRecno])
 			lNovoRegistro	:= .T.
 		Else
 			lNovoRegistro	:= .F.
 			SZ3->(DbGoTop())
-			SZ3->(DbGoTo(oGridApontamento:aCols[nItemGrid][26]))
+			SZ3->(DbGoTo(oGridApontamento:aCols[nItemGrid][nPosRecno]))
 		EndIf
 
 		If !(oGridApontamento:aCols[nItemGrid][Len(oGridApontamento:aCols[nItemGrid])])
@@ -767,10 +780,11 @@ Static Function salvaApontamento()
 			SZ3->Z3_ASPVISU	:= oGridApontamento:aCols[nItemGrid][19]
 			SZ3->Z3_APROVAD	:= oGridApontamento:aCols[nItemGrid][20]
 			SZ3->Z3_QTDPECA	:= oGridApontamento:aCols[nItemGrid][21]
-			SZ3->Z3_PESOBRU	:= oGridApontamento:aCols[nItemGrid][22]
-			SZ3->Z3_PESOLIQ	:= oGridApontamento:aCols[nItemGrid][23]
-			SZ3->Z3_LOTEEMP	:= oGridApontamento:aCols[nItemGrid][24]
-			SZ3->Z3_SOLICIT	:= oGridApontamento:aCols[nItemGrid][25]
+			SZ3->Z3_LOTEEMP	:= oGridApontamento:aCols[nItemGrid][22]
+			SZ3->Z3_PESOBRU	:= oGridApontamento:aCols[nItemGrid][23]
+			SZ3->Z3_PESOLIQ	:= oGridApontamento:aCols[nItemGrid][24]
+			SZ3->Z3_SALDOOK	:= oGridApontamento:aCols[nItemGrid][25]
+			SZ3->Z3_SOLICIT	:= oGridApontamento:aCols[nItemGrid][26]
 			SZ3->Z3_APONTOK	:= oGridApontamento:aCols[nItemGrid][nPosdgt]
 			SZ3->(MsUnlock())
 		ElseIf !lNovoRegistro
@@ -791,16 +805,16 @@ Return
 	Valida delete da linha do apontamento
 */
 User Function validaDeleteLinhaBlankChapa()
-	Local	lRetorno	:= .F.	as logical
+	Local lRetorno	:= .F.	as logical
 
 	If oGridApontamento:nAt == Len(oGridApontamento:aCols)
 		If oGridApontamento:aCols[oGridApontamento:nAt][27] == "S"
-			FWAlertWarning("Linha j  apontada não pode ser deletada.", "Delete")
+			FWAlertWarning("Linha já apontada não pode ser deletada.", "Delete")
 		Else
 			lRetorno	:= .T.
 		EndIf
 	Else
-		FWAlertWarning("Somente a ultima linha pode ser deletada.", "Delete")
+		FWAlertWarning("Somente a última linha pode ser deletada.", "Delete")
 	EndIf
 Return lRetorno
 
@@ -808,7 +822,7 @@ Return lRetorno
 	Processa Apontamento
 */
 Static Function processaApontamento()
-	Private oProcess		:= Nil	as object
+	Private oProcess	:= Nil	as object
 
 	oProcess	:=	MsNewProcess():New( { |lEnd| gravaApontamento() },"Apontamento","Executando...",.T.)
 	oProcess:Activate()
@@ -824,7 +838,8 @@ Static Function gravaApontamento()
 	Local aRecursos     := {} as array
 	Local nOperacao     := 1  as integer
 	Local cHorario      := "" as character
-	Local cGrupoChapa := SuperGetMV("ZV_GRPCHAP",.F.,"000000")
+	Local cGrupoChapa	:= SuperGetMV("ZV_GRPCHAP",.F.,"000000")	as character
+
 	Private lAutoErrNoFile  := .T.
 	Private lMsErroAuto     := .F.
 	Private lContinua		:= .T.
@@ -835,7 +850,7 @@ Static Function gravaApontamento()
 	salvaApontamento()
 
 	// cQuery := 	queryBuscarRecursos()
-	cQuery := 	queryBuscarRecursosSG2()
+	cQuery	:= queryBuscarRecursosSG2()
 
 	MPSysOpenQuery( cQuery, cAliasRecurso := GetNextAlias() )
 	While (cAliasRecurso)->(!EoF())
@@ -844,19 +859,36 @@ Static Function gravaApontamento()
 	EndDo
 	(cAliasRecurso)->(DbCloseArea())
 
-	cQuery := 	queryBuscarApontamentos()
+	cQuery	:= queryBuscarApontamentos()
 	MPSysOpenQuery( cQuery, cAlias := GetNextAlias() )
 
 	oProcess:IncRegua1("Gerando Apontamentos...")
 
 	(cAlias)->(DbGoTop())
 	While (cAlias)->(!EoF())
-		If (cAlias)->Z3_QTDPECA > 0  .And. !((cAlias)->Z3_APROVAD == "D") .And. !((cAlias)->Z3_OPERAC $ "ST/SD") .And. !((cAlias)->Z3_APONTOK == "S")
-
+		If (cAlias)->Z3_QTDPECA > 0 .And. !((cAlias)->Z3_APROVAD == "D") .And. !((cAlias)->Z3_OPERAC $ "ST/SD") .And. !((cAlias)->Z3_APONTOK == "S")
 			cHorario	:= (cAlias)->Z3_HORARIO
-			cGrupx:=alltrim(posicione("SB1",1,xfilial("SB1")+(cAliasTela)->C2_PRODUTO,"B1_GRUPO"))
-			cGrupx:=cGrupx + SB1->B1_ZSUBGRU
-			If cGrupx $cGrupoChapa  .or. !Empty((cAlias)->Z3_LOTEEMP)
+			cGrupx		:= AllTrim(Posicione("SB1",1,FWxFilial("SB1")+(cAliasTela)->C2_PRODUTO,"B1_GRUPO"))
+			cGrupx		:= cGrupx + SB1->B1_ZSUBGRU
+
+			SZ3->(DbGoTop())
+			SZ3->(DbGoTo((cAlias)->R_E_C_N_O_))
+
+			lApontamentoFinal	:= .T.
+			lSaldoPeso			:= validaSaldoPeso()
+
+			If RecLock("SZ3", .F.)
+				SZ3->Z3_SALDOOK	:= IIF(lSaldoPeso, "S", "N")
+				SZ3->(MsUnlock())
+			EndIf
+
+			If !lSaldoPeso
+				FWAlertError("Peso líquido informado superior ao saldo disponivel.", "Saldo Peso")
+				(cAlias)->(DbSkip())
+				Loop
+			EndIf
+
+			If cGrupx $ cGrupoChapa .Or. !Empty((cAlias)->Z3_LOTEEMP)
 				Begin Transaction
 					If Len(aRecursos) == 2
 						For nOperacao := 1 To Len(aRecursos)
@@ -915,8 +947,8 @@ Static Function gravaApontamento()
 						FWAlertError("Caadastro de Roteiro Invalido. Verifique as operacoes cadastradas", "Apontamento")
 						DisarmTransaction()
 						lContinua := .F.
-
 					endif
+
 					If lContinua
 						SZ3->(DbGoTop())
 						SZ3->(DbGoTo((cAlias)->R_E_C_N_O_))
@@ -927,7 +959,7 @@ Static Function gravaApontamento()
 							SZ3->(MsUnlock())
 
 						Else
-							FWAlertError("Confirma  o do apontamento nao realizada. (SZ3)", "Apontamento")
+							FWAlertError("Confirmação do apontamento não realizada. (SZ3)", "Apontamento")
 							DisarmTransaction()
 							lContinua := .F.
 						EndIf
@@ -993,16 +1025,16 @@ Static Function gravaApontamento()
 					EndIf
 				End Transaction
 			Else
-				cGrupo:=alltrim(posicione("SB1",1,xfilial("SB1")+(cAliasTela)->C2_PRODUTO,"B1_GRUPO"))
-				cProdx:=(cAliasTela)->C2_PRODUTO
-				cDesc:=alltrim((cAliasTela)->TMP_DESPRD)
+				cGrupo	:= AllTrim(Posicione("SB1",1,FWxFilial("SB1")+(cAliasTela)->C2_PRODUTO,"B1_GRUPO"))
+				cProdx	:= (cAliasTela)->C2_PRODUTO
+				cDesc	:= AllTrim((cAliasTela)->TMP_DESPRD)
 
-				FWAlertError("Aten  o "+CRLF+;
-					" O Produto:"+ cProdx+'-'+cDesc+ CRLF+;
-					" Esta no Grupo "+cGrupo+" Não permitido seu apontamento sem lote "+CRLF+;
-					" Produtos sem lote devem ser do grupo :"+cGrupoChapa+CRLF+;
-					" Favor ajustar cadastro de produto ou" +CRLF+;
-					" Informar o lote ou "+CRLF+;
+				FWAlertError("Atenção " + CRLF+;
+					" O Produto: " +cProdx+ '-' +cDesc+ CRLF+;
+					" Esta no Grupo " +cGrupo+ " Não permitido seu apontamento sem lote " + CRLF+;
+					" Produtos sem lote devem ser do grupo : " +cGrupoChapa+ CRLF+;
+					" Favor ajustar cadastro de produto ou" + CRLF+;
+					" Informar o lote ou " + CRLF+;
 					" Ajustar parametro ZV_GRPCHAP", "Não Apontado")
 				DisarmTransaction()
 				lContinua := .F.
@@ -1256,7 +1288,7 @@ Static Function gravaQualidade()
 				If lMsErroAuto
 					cError := getError()
 					addLogs(cError)
-					FWAlertError("Liberacao do qualidade não realizado.", "Qualidade")
+					FWAlertError("Liberação do qualidade não realizada.", "Qualidade")
 					//DisarmTransaction()
 					lContinua := .F.
 				EndIf
@@ -1280,18 +1312,18 @@ Static Function gravaQualidade()
 					aCM := {0,0,0,0,0}
 					fGravaCQ(SD7->D7_PRODUTO,SD7->D7_NUMERO,.F.,aMov,aCM)
 				Else
-					FWAlertError("Item não   do tipo 0 na (SD7).", "Qualidade")
+					FWAlertError("Item não é do tipo 0 na (SD7).", "Qualidade")
 					//DisarmTransaction()
 					lContinua := .F.
 				EndIf
 			EndIf
 		Else
-			FWAlertError("Item não identificado para libera  o do CQ (SD7).", "Qualidade")
+			FWAlertError("Item não identificado para liberação do CQ (SD7).", "Qualidade")
 			//DisarmTransaction()
 			lContinua := .F.
 		EndIf
 	Else
-		FWAlertError("Movimenta  o de produ  o/estoque não encontrada (SD3).", "PCP")
+		FWAlertError("Movimentação de produção/estoque não encontrada (SD3).", "PCP")
 		//DisarmTransaction()
 		lContinua := .F.
 	EndIf
@@ -1318,7 +1350,7 @@ Static Function baixarEmpenho()
 
 	cGrupoprod:=alltrim(cGrupoprod) + SB1->B1_ZSUBGRU
 	If  Empty((cAlias)->Z3_LOTEEMP) .and. !cGrupoprod$cGrupoChapa
-		FWAlertError("Obrigat rio informar o LOTE.", "Baixa Empenho")
+		FWAlertError("Obrigatório informar o LOTE.", "Baixa Empenho")
 		lContinua := .F.
 		Return lContinua
 	EndIf
@@ -1411,7 +1443,7 @@ Static Function baixarEmpenho()
 			lContinua := .F.
 		EndIf
 	Else
-		FWAlertError("Lote: "+SZ3->Z3_LOTEEMP+" inv lido.", "Baixa Empenho")
+		FWAlertError("Lote: "+SZ3->Z3_LOTEEMP+" inválido.", "Baixa Empenho")
 		lContinua := .F.
 	EndIf
 
@@ -1420,7 +1452,7 @@ Static Function baixarEmpenho()
 Return lContinua
 
 /*
-	Endere ar Saldo do Apontamento
+	Endereçar Saldo do Apontamento
 */
 Static Function enderecarApontamento()
 	DbSelectArea("SD3")
@@ -1428,14 +1460,14 @@ Static Function enderecarApontamento()
 	If SD3->(DbSeek(xFilial("SD3")+SH6->H6_PRODUTO+SH6->H6_IDENT))
 		lContinua := enderecarItens()
 	Else
-		FWAlertError("Movimenta  o de produ  o/estoque não encontrada (SD3).", "PCP")
+		FWAlertError("Movimentação de produção/estoque não encontrada (SD3).", "PCP")
 		//DisarmTransaction()
 		lContinua := .F.
 	EndIf
 Return lContinua
 
 /*
-	Endere ar Saldo do Qualidade
+	Endereçar Saldo do Qualidade
 */
 Static Function enderecarQualidade()
 	DbSelectArea("SD3")
@@ -1443,7 +1475,7 @@ Static Function enderecarQualidade()
 	If SD3->(DbSeek(xFilial("SD3")+AvKey(SD7->D7_NUMERO,"D3_DOC")+AvKey("", "D3_ITEM")+"DE4"))
 		lContinua := enderecarItens()
 	Else
-		FWAlertError("Movimenta  o de libera  o do CQ não encontrada (SD3).", "Qualidade")
+		FWAlertError("Movimentação de liberação do CQ não encontrada (SD3).", "Qualidade")
 		//DisarmTransaction()
 		lContinua := .F.
 	EndIf
@@ -1487,7 +1519,7 @@ Static Function enderecarItens()
 			EndIf
 		EndIf
 	Else
-		FWAlertError("Saldo a endere ar nao encontrado (SDA).", "Saldo")
+		FWAlertError("Saldo a endereçar não encontrado (SDA).", "Saldo")
 		//DisarmTransaction()
 		lContinua := .F.
 	EndIf
@@ -1532,15 +1564,11 @@ Static Function addLogs(cLogs, cSolucao, lRet)
 	EndIf
 Return
 
-
-
-
 /*
 	Busca de Op
 */
-user Function getLoteOp(cCodigoOrdemProducao)
+User Function getLoteOp(cCodigoOrdemProducao)
 	Local cCodigoMP          := ""								as character
-
 
 	dbSelectArea("SD4")
 	SD4->(dbSetOrder(2))
@@ -1554,17 +1582,14 @@ user Function getLoteOp(cCodigoOrdemProducao)
 			SD4->(dbSkip())
 		Enddo
 	Endif
-
-
 Return cCodigoMP
-
 
 /*
 	tela de f4 do lote
 */
 Static Function getLote(cProduto,cLocal,cLote)
-	Local cQuery :=''
-	Local cAliasSB8 := GetNextAlias()
+	Local cQuery		:= ''
+	Local cAliasSB8		:= GetNextAlias()
 	Local aAreaAtu    	:= GetArea()
 	Local aCabec      	:= {}
 	Local nRet        	:= 0
@@ -1572,24 +1597,25 @@ Static Function getLote(cProduto,cLocal,cLote)
 	Local aNewButton  	:= {}
 	Local lCancel     	:= .T.
 	Local lRet			:= .F.
-	Local nLinAtu		:=oGridApontamento:nAt
+	Local nLinAtu		:= oGridApontamento:nAt
 	Local nPosLote:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_LOTEEMP"    })
 	Local nPosApon:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })
+
 	Private aOrc	   	:= {}
 	Private aTitulo		:= {}
+
 	aAdd( aTitulo,"Produto " )
-	aAdd( aTitulo,"Descri  o" )
+	aAdd( aTitulo,"Descrição" )
 	aAdd( aTitulo,"Lote" )
 	aAdd( aTitulo,"Saldo" )
 
-	if nLinAtu==1
-		FWAlertWarning("A primeira linha não pode ser editada, somente consulta das informa  es.", "Linha de Consulta")
+	if nLinAtu == 1
+		FWAlertWarning("A primeira linha não pode ser editada, somente consulta das informações.", "Linha de Consulta")
 		RETURN(.t.)
 	Endif
 
-	if  oGridApontamento:aCols[nLinAtu,nPosApon]=='S'
-
-		FWAlertWarning("Linha ja Apontada nao pode ser alterada!",'Linha Apontada')
+	if oGridApontamento:aCols[nLinAtu,nPosApon] == 'S'
+		FWAlertWarning("Linha já Apontada não pode ser alterada!",'Linha Apontada')
 		return(.t.)
 	EndIf
 
@@ -1618,19 +1644,19 @@ Static Function getLote(cProduto,cLocal,cLote)
 
 
 	RestArea(aAreaAtu)
-	nRet :=0
+	nRet := 0
 
-	If Len(aOrc)>0
+	If Len(aOrc) > 0
 		nRet := TmsF3Array( aTitulo, aOrc, cCadastro, lCancel, aNewButton, aCabec )
 
 
-		If nRet >0
-			oGridApontamento:aCols[nLinAtu][nPosLote]:= aOrc[nRet,3]
+		If nRet > 0
+			oGridApontamento:aCols[nLinAtu][nPosLote]	:= aOrc[nRet,3]
 
 			lRet := .T.
 		EndIf
 	else
-		FWAlertWarning("Não existem lotes para o produto "+cProduto+" Armazem "+cLocal,'Linha Apontada')
+		FWAlertWarning("Não existem lotes para o produto "+cProduto+" Armazém "+cLocal,'Linha Apontada')
 	EndIf
 
 Return(lRet)
@@ -1665,3 +1691,143 @@ Static Function queryBuscaProdutoDoLote()
 	cQuery += " 		AND B8_LOTECTL  = '"+SZ3->Z3_LOTEEMP+"'" + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
 Return cQuery
+
+/*
+	Valida saldo em peso do produto utilizado
+*/
+Static Function validaSaldoPeso()
+	Local lRetorno				:= .T.	as logical
+	Local nSaldoTotal			:= 0	as numeric
+	Local nSaldoPlano			:= 0	as numeric
+	Local nPesoApontadoTela		:= 0	as numeric
+	Local nPesoApontado			:= 0	as numeric
+	Local cLoteEmpenho			:= ""	as character
+	Local nPosLote				:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})
+
+	nSaldoTotal			:= buscaSaldoTotal()
+	nSaldoPlano			:= buscaSaldoPlano()
+	nPesoApontadoTela	:= buscaPesoApontadoTela()
+
+	cLoteEmpenho	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])
+	nPesoApontado	:= IIF(lApontamentoFinal, SZ3->Z3_PESOLIQ, XX_PESOLIQ)
+
+	If lApontamentoFinal
+		If nSaldoTotal < nPesoApontado
+			lRetorno	:= .F.
+		ElseIf Empty(cLoteEmpenho)
+			If nSaldoPlano < nPesoApontado
+				FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+			EndIf
+		EndIf
+	Else
+		If ( nSaldoTotal - nPesoApontadoTela ) < nPesoApontado
+			lRetorno	:= .F.
+		ElseIf Empty(cLoteEmpenho)
+			If ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado
+				FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+			EndIf
+		EndIf
+	EndIf
+Return lRetorno
+
+/*
+	Busca saldo produto utilizado
+*/
+Static Function buscaSaldoTotal()
+	Local nRetorno	:= 0	as numeric
+	Local cQuery	:= ""	as character
+
+	cQuery		:= queryBuscaSaldoTotal()
+	nRetorno	:= MPSysExecScalar(cQuery, "B8_SALDO")
+Return nRetorno
+
+/*
+	Query busca saldo produto utilizado
+*/
+Static Function queryBuscaSaldoTotal()
+	Local cQuery	:= ""	as character
+	Local cLote		:= ""	as character
+	Local nPosLote	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})
+
+	cLote	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])
+
+	If Empty(cLote)
+		cLote	:= (cAliasTela)->C5_ZLOTCTL
+	EndIf
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        B8_SALDO "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SB8") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
+	cQuery += " 		AND B8_LOTECTL  = '"+cLote+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
+Return cQuery
+
+/*
+	Busca saldo do plano de corte
+*/
+Static Function buscaSaldoPlano()
+	Local nRetorno		:= 0	as numeric
+	Local cQuery		:= ""	as character
+	Local cAliasSaldo	:= ""	as character
+
+	cQuery		:= queryBuscaSaldoPlano()
+
+	MPSysOpenQuery( cQuery, cAliasSaldo := GetNextAlias() )
+
+	(cAliasSaldo)->(DbGoTop())
+	While (cAliasSaldo)->(!EoF())
+		If (cAliasSaldo)->C6_ITEM == "01"
+			nRetorno	+= (cAliasSaldo)->C6_ZPESO
+		ElseIf !Empty((cAliasSaldo)->C6_LOTECTL)
+			nRetorno	-= (cAliasSaldo)->C6_ZPESO
+		EndIf
+
+		(cAliasSaldo)->(DbSkip())
+	EndDo
+
+	(cAliasSaldo)->(DbCloseArea())
+Return nRetorno
+
+/*
+	Query busca saldo do plano de corte
+*/
+Static Function queryBuscaSaldoPlano()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        C6_ITEM "		+ CRLF
+	cQuery += "        ,C6_ZPESO "		+ CRLF
+	cQuery += "        ,C6_LOTECTL "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 		AND C6_NUM  = '"+(cAliasTela)->C5_NUM+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+Return cQuery
+
+/*
+	Busca peso apontado em tela
+*/
+Static Function buscaPesoApontadoTela()
+	Local nRetorno		:= 0	as numeric
+	Local nPosGrid		:= 0	as integer
+	Local nPosOperacao	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_OPERAC"})
+	Local nPosPesoLiq	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_PESOLIQ"})
+	Local nPosApontado	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_APONTOK"})
+
+	For nPosGrid := 1 To Len(oGridApontamento:aCols)
+		If (nPosGrid != oGridApontamento:nAt) .And. !(oGridApontamento:aCols[nPosGrid][nPosOperacao] $ "ST/SD") .And. !(oGridApontamento:aCols[nPosGrid][nPosApontado] == "S")
+			nRetorno	+= oGridApontamento:aCols[nPosGrid][nPosPesoLiq]
+		EndIf
+	Next nPosGrid
+Return nRetorno

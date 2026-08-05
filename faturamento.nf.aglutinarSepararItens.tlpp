@@ -459,6 +459,12 @@ Static Function aglutinaItens()
 						aCOFINSAglutinado[nPosAglutinado][5]	+= aCOFINSOriginal[nPosRetorno][5]
 					EndIf
 
+					If Len(aLoteOriginal) > 0
+						If Len(aLoteOriginal[nPosRetorno]) > 0
+							aLoteAglutinado[nPosAglutinado][2]	+= aLoteOriginal[nPosRetorno][2]
+						EndIf
+					EndIf
+
 					If nPosTotal > 0
 						aTotalItemAglutinado[nPosAglutinado][2]	+= aTotalItemOriginal[nPosTotal][2]
 					EndIf
@@ -543,6 +549,12 @@ Static Function aglutinaItens()
 							aCOFINSAglutinado[nPosAglutinado][2]	:= nFatorSeparacao * aCOFINSOriginal[nPosRetorno][2]
 							aCOFINSAglutinado[nPosAglutinado][4]	:= nFatorSeparacao * aCOFINSOriginal[nPosRetorno][4]
 							aCOFINSAglutinado[nPosAglutinado][5]	:= nFatorSeparacao * aCOFINSOriginal[nPosRetorno][5]
+						EndIf
+
+						If Len(aLoteOriginal) > 0
+							If Len(aLoteOriginal[nPosRetorno]) > 0
+								aLoteAglutinado[nPosAglutinado][2]	:= nFatorSeparacao * aLoteOriginal[nPosRetorno][2]
+							EndIf
 						EndIf
 
 						If nPosTotal > 0

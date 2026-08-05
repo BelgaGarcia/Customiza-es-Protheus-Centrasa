@@ -59,11 +59,11 @@ User Function origemProdutoEntrada()
 	If !Empty(cClassificacao)
 		cCharClass := SubStr(cClassificacao,1,1)
 		For nRecord := 1 To Len(aCols)
-			If ( nLinhaProduto == nRecord )
+			/*If ( nLinhaProduto == nRecord )
 				aCols[nRecord,nPosClasfis] := cClassificacao	
-			Else
+			Else*/
 				aCols[nRecord,nPosClasfis] := cCharClass + SubStr(aCols[nRecord,nPosClasfis],2,3)
-			Endif
+			//Endif
 		Next nRecord
 	Endif
 

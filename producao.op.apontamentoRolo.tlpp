@@ -45,6 +45,8 @@ User Function apontamentoRolo(cAlias, nRegistro)
 	Private cDiferencaEixoLIE		:= ""	as character
 	Private cDiferencaEixoLSE		:= ""	as character
 
+	Private lApontamentoFinal		:= .F.	as logical
+
 	montaTelaApontamento()
 Return
 
@@ -134,6 +136,7 @@ Static Function montaListaOperacoes()
 	aAdd( aHeader,	{"Qtde.Pecas"				,"XX_QTDPECA"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
 	aAdd( aHeader,	{"Peso.Bruto"				,"XX_PESOBRU"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
 	aAdd( aHeader,	{"Peso.Liquido"				,"XX_PESOLIQ"	,"9,999,999.9999"	,12,4,"AllwaysTrue()","","N","","R","","",""}	)
+	aAdd( aHeader,	{"Saldo OK?"				,"XX_SALDOOK"	,""					,01,0,"AllwaysTrue()","","C","","R","S=OK;N=N OK","N",""}	)
 	aAdd( aHeader,	{"Conforme.Solicitado?"		,"XX_SOLICIT"	,""					,01,0,"AllwaysTrue()","","C","","R","S=Sim;N=Nao","",""}	)
 	aAdd( aHeader,	{"Aprovado/Reprovado"		,"XX_APROV2"	,""					,01,0,"AllwaysTrue()","","C","","R","A=Aprovado;R=Reprovado","",""}	)
 	//aAdd( aHeader,	{"RecnoSZ4"					,"XX_RECNO"		,""					,15,0,"AllwaysTrue()","","C","","R","","",""}	)
@@ -397,6 +400,7 @@ Static Function buscarApontamentos()
 			(cAlias)->Z4_QTDPECA,;
 			(cAlias)->Z4_PESOBRU,;
 			(cAlias)->Z4_PESOLIQ,;
+			(cAlias)->Z4_SALDOOK,;
 			(cAlias)->Z4_SOLICIT,;
 			(cAlias)->Z4_APROV2,;
 			(cAlias)->R_E_C_N_O_,;
@@ -486,13 +490,17 @@ User Function validaFieldRolo()
 	Local lRetorno				:= .T.	as logical
 	Local cUltimoApontamento	:= "00"	as character
 	Local nItemGrid				:= 0	as integer
+	Local nPosApontado			:=	aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_APONTOK"})
+	Local nPosPesoLiq			:=	aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_PESOLIQ"})
+	Local nPosPesoBruto			:=	aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_PESOBRU"})
+	Local nPosSaldoOK			:=	aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_SALDOOK"})
 
 	Private cCampo	:= ReadVar()	as character
 
 	If oGridApontamento:nAt == 1
 		lRetorno	:= .F.
 		FWAlertWarning("A primeira linha não pode ser editada, somente consulta das informações.", "Linha de Consulta")
-	ElseIf oGridApontamento:aCols[oGridApontamento:nAt][24] == "S"
+	ElseIf oGridApontamento:aCols[oGridApontamento:nAt][nPosApontado] == "S"
 		lRetorno	:= .F.
 		FWAlertWarning("Apontamento já realizado para essa linha, não pode ser editada.", "Apontamento Realizado")
 	Else
@@ -553,7 +561,7 @@ User Function validaFieldRolo()
 				If XX_PESOBRU <= 0 .AND. SUBSTR(oGridApontamento:aCols[oGridApontamento:nAt][1], 1, 1) <> "S"
 					lRetorno	:= .F.
 					FWAlertWarning("Peso bruto menor ou igual a zero.", "Peso")
-				ElseIf oGridApontamento:aCols[oGridApontamento:nAt][20] > 0 .And. XX_PESOBRU < oGridApontamento:aCols[oGridApontamento:nAt][20]
+				ElseIf oGridApontamento:aCols[oGridApontamento:nAt][nPosPesoLiq] > 0 .And. XX_PESOBRU < oGridApontamento:aCols[oGridApontamento:nAt][nPosPesoLiq]
 					lRetorno	:= .F.
 					FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
 				EndIf
@@ -562,9 +570,20 @@ User Function validaFieldRolo()
 				If XX_PESOLIQ <= 0 .AND. SUBSTR(oGridApontamento:aCols[oGridApontamento:nAt][1], 1, 1) <> "S"
 					lRetorno	:= .F.
 					FWAlertWarning("Peso liquido menor ou igual a zero.", "Peso")
-				ElseIf oGridApontamento:aCols[oGridApontamento:nAt][19] > 0 .And. oGridApontamento:aCols[oGridApontamento:nAt][19] < XX_PESOLIQ
-					lRetorno	:= .F.
-					FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
+				ElseIf oGridApontamento:aCols[oGridApontamento:nAt][nPosPesoBruto] > 0
+					If oGridApontamento:aCols[oGridApontamento:nAt][nPosPesoBruto] < XX_PESOLIQ
+						lRetorno	:= .F.
+						FWAlertWarning("Peso liquido maior que o peso bruto.", "Peso")
+					EndIf
+
+					lApontamentoFinal	:= .F.
+
+					If validaSaldoPeso()
+						oGridApontamento:aCols[oGridApontamento:nAt][nPosSaldoOK]	:= "S"
+					Else
+						oGridApontamento:aCols[oGridApontamento:nAt][nPosSaldoOK]	:= "N"
+						FWAlertWarning("Peso liquido maior que o saldo disponivel para uso.", "Saldo Peso")
+					EndIf
 				EndIf
 
 		EndCase
@@ -695,17 +714,18 @@ Return lRetorno
 Static Function salvaApontamento()
 	Local nItemGrid		:= 0	as integer
 	Local lNovoRegistro	:= .T.	as logical
-	Local nPosdgt:=	aScan(oGridApontamento:aHeader,{ |x| x[2] = "XX_APONTOK"    })
+	Local nPosdgt		:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_APONTOK"})	as integer
+	Local nPosRecno		:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_RECNO"})	as integer
 
 	DbSelectArea("SZ4")
 
 	For nItemGrid := 2 To Len(oGridApontamento:aCols)
-		If Empty(oGridApontamento:aCols[nItemGrid][23])
+		If Empty(oGridApontamento:aCols[nItemGrid][nPosRecno])
 			lNovoRegistro	:= .T.
 		Else
 			lNovoRegistro	:= .F.
 			SZ4->(DbGoTop())
-			SZ4->(DbGoTo(oGridApontamento:aCols[nItemGrid][23]))
+			SZ4->(DbGoTo(oGridApontamento:aCols[nItemGrid][nPosRecno]))
 		EndIf
 
 		If !(oGridApontamento:aCols[nItemGrid][Len(oGridApontamento:aCols[nItemGrid])])
@@ -732,8 +752,9 @@ Static Function salvaApontamento()
 			SZ4->Z4_QTDPECA	:= oGridApontamento:aCols[nItemGrid][18]
 			SZ4->Z4_PESOBRU	:= oGridApontamento:aCols[nItemGrid][19]
 			SZ4->Z4_PESOLIQ	:= oGridApontamento:aCols[nItemGrid][20]
-			SZ4->Z4_SOLICIT	:= oGridApontamento:aCols[nItemGrid][21]
-			SZ4->Z4_APROV2	:= oGridApontamento:aCols[nItemGrid][22]
+			SZ4->Z4_SALDOOK	:= oGridApontamento:aCols[nItemGrid][21]
+			SZ4->Z4_SOLICIT	:= oGridApontamento:aCols[nItemGrid][22]
+			SZ4->Z4_APROV2	:= oGridApontamento:aCols[nItemGrid][23]
 			SZ4->Z4_APONTOK	:= oGridApontamento:aCols[nItemGrid][nPosdgt]
 			SZ4->(MsUnlock())
 		ElseIf !lNovoRegistro
@@ -757,7 +778,7 @@ User Function validaDeleteLinhaRolo()
 	Local	lRetorno	:= .F.	as logical
 
 	If oGridApontamento:nAt == Len(oGridApontamento:aCols)
-		If oGridApontamento:aCols[oGridApontamento:nAt][24] == "S"
+		If oGridApontamento:aCols[oGridApontamento:nAt][25] == "S"
 			FWAlertWarning("Linha já apontada não pode ser deletada.", "Delete")
 		Else
 			lRetorno	:= .T.
@@ -818,10 +839,25 @@ Static Function gravaApontamento()
 		If (cAlias)->Z4_QTDPECA > 0 .And. !((cAlias)->Z4_APROV1 == "D") .And. !((cAlias)->Z4_APROV2 == "D") .And. !((cAlias)->Z4_OPERAC $ "ST/SD") .And. !((cAlias)->Z4_APONTOK == "S")
 			cHorario	:= (cAlias)->Z4_HORARIO
 
+			SZ4->(DbGoTop())
+			SZ4->(DbGoTo((cAlias)->R_E_C_N_O_))
+
+			lApontamentoFinal	:= .T.
+			lSaldoPeso			:= validaSaldoPeso()
+
+			If RecLock("SZ4", .F.)
+				SZ4->Z4_SALDOOK	:= IIF(lSaldoPeso, "S", "N")
+				SZ4->(MsUnlock())
+			EndIf
+
+			If !lSaldoPeso
+				FWAlertError("Peso líquido informado superior ao saldo disponivel.", "Saldo Peso")
+				(cAlias)->(DbSkip())
+				Loop
+			EndIf
+
 			Begin Transaction
-
 				If Len(aRecursos) == 2
-
 					If lContinua
 						oProcess:IncRegua2("Baixando Saldo Empenhado...")
 						If !baixarEmpenho()
@@ -829,18 +865,15 @@ Static Function gravaApontamento()
 							lContinua := .F.
 						EndIf
 					EndIf
+
 					If lContinua
 						For nOperacao := 1 To Len(aRecursos)
-
-
 							oProcess:SetRegua2(7)
 							oProcess:IncRegua2("Gravando Apontamento...")
 
 							SB1->(DbSeek(xFilial("SB1")+(cAliasTela)->C2_PRODUTO))
 
-
 							aLoteProduzido := dsm.genericos.U_fBuscaProximoLote((cAliasTela)->TMP_ORDEM, (cAliasTela)->C2_PRODUTO)
-
 
 							Begin Sequence
 								aVetorSH6 :=	{;
@@ -1850,3 +1883,128 @@ EndIf
 	EndIf
 
 Return lAjustouEmpenho
+
+/*
+	Valida saldo em peso do produto utilizado
+*/
+Static Function validaSaldoPeso()
+	Local lRetorno				:= .T.	as logical
+	Local nSaldoTotal			:= 0	as numeric
+	Local nSaldoPlano			:= 0	as numeric
+	Local nPesoApontadoTela		:= 0	as numeric
+	Local nPesoApontado			:= 0	as numeric
+
+	nSaldoTotal			:= buscaSaldoTotal()
+	nSaldoPlano			:= buscaSaldoPlano()
+	nPesoApontadoTela	:= buscaPesoApontadoTela()
+
+	nPesoApontado	:= IIF(lApontamentoFinal, SZ4->Z4_PESOLIQ, XX_PESOLIQ)
+
+	If lApontamentoFinal
+		If nSaldoTotal < nPesoApontado
+			lRetorno	:= .F.
+		ElseIf nSaldoPlano < nPesoApontado
+			FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+		EndIf
+	Else
+		If ( nSaldoTotal - nPesoApontadoTela ) < nPesoApontado
+			lRetorno	:= .F.
+		ElseIf ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado
+			FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+		EndIf
+	EndIf
+Return lRetorno
+
+/*
+	Busca saldo produto utilizado
+*/
+Static Function buscaSaldoTotal()
+	Local nRetorno	:= 0	as numeric
+	Local cQuery	:= ""	as character
+
+	cQuery		:= queryBuscaSaldoTotal()
+	nRetorno	:= MPSysExecScalar(cQuery, "B8_SALDO")
+Return nRetorno
+
+/*
+	Query busca saldo produto utilizado
+*/
+Static Function queryBuscaSaldoTotal()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        B8_SALDO "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SB8") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
+	cQuery += " 		AND B8_LOTECTL  = '"+(cAliasTela)->C5_ZLOTCTL+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
+Return cQuery
+
+/*
+	Busca saldo do plano de corte
+*/
+Static Function buscaSaldoPlano()
+	Local nRetorno		:= 0	as numeric
+	Local cQuery		:= ""	as character
+	Local cAliasSaldo	:= ""	as character
+
+	cQuery		:= queryBuscaSaldoPlano()
+
+	MPSysOpenQuery( cQuery, cAliasSaldo := GetNextAlias() )
+
+	(cAliasSaldo)->(DbGoTop())
+	While (cAliasSaldo)->(!EoF())
+		If (cAliasSaldo)->C6_ITEM == "01"
+			nRetorno	+= (cAliasSaldo)->C6_ZPESO
+		ElseIf !Empty((cAliasSaldo)->C6_LOTECTL)
+			nRetorno	-= (cAliasSaldo)->C6_ZPESO
+		EndIf
+
+		(cAliasSaldo)->(DbSkip())
+	EndDo
+
+	(cAliasSaldo)->(DbCloseArea())
+Return nRetorno
+
+/*
+	Query busca saldo do plano de corte
+*/
+Static Function queryBuscaSaldoPlano()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        C6_ITEM "		+ CRLF
+	cQuery += "        ,C6_ZPESO "		+ CRLF
+	cQuery += "        ,C6_LOTECTL "	+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SC6") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SC6") + CRLF
+	cQuery += " 		AND C6_NUM  = '"+(cAliasTela)->C5_NUM+"'" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SC6") + CRLF
+Return cQuery
+
+/*
+	Busca peso apontado em tela
+*/
+Static Function buscaPesoApontadoTela()
+	Local nRetorno		:= 0	as numeric
+	Local nPosGrid		:= 0	as integer
+	Local nPosOperacao	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_OPERAC"})
+	Local nPosPesoLiq	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_PESOLIQ"})
+	Local nPosApontado	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_APONTOK"})
+
+	For nPosGrid := 1 To Len(oGridApontamento:aCols)
+		If (nPosGrid != oGridApontamento:nAt) .And. !(oGridApontamento:aCols[nPosGrid][nPosOperacao] $ "ST/SD") .And. !(oGridApontamento:aCols[nPosGrid][nPosApontado] == "S")
+			nRetorno	+= oGridApontamento:aCols[nPosGrid][nPosPesoLiq]
+		EndIf
+	Next nPosGrid
+Return nRetorno

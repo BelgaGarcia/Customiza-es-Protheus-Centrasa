@@ -239,6 +239,16 @@ User Function RelPc01()
 	TRB->(DbGoTop())
 	While TRB->(!Eof())
 		If !Empty(TRB->A2_OK)
+			If nLin >= 800
+				Cabecalho()
+
+				oPrinter:Fillrect({nLin, 000, nLin+25, nColFim}, oBrush1, "-2")
+				nLin += 14
+				nDescr := Len('OBSERVAÇÕES DO PLANO DE CORTE')
+				oPrinter:Say(nLin, (nColFim/2)-100, 'OBSERVAÇÕES DO PLANO DE CORTE', oFont09n:oFont,,CLR_WHITE)
+				nLin += 11
+			EndIf
+
 			aObsPed	:= {}
 			Q_MemoArray(TRB->C6_ZOBS, @aObsPed, 110)
 
