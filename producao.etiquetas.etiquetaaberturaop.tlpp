@@ -281,7 +281,13 @@ Static Function ImprimirEtiqueta(oProcess,cCodigoOrdemProducao,cLoteSc2)
 		cCodigoZPL += "^FT327,28^A0R,30,30^FH\^CI28^FDNumero Inspecao:^FS^CI27"+CRLF
 		cCodigoZPL += "^FT285,28^A0R,40,40^FH\^CI28^FD"+cNumeroInspecao+"^FS^CI27"+CRLF
 		cCodigoZPL += "^FT327,490^A0R,30,30^FH\^CI28^FDCod.Cliente^FS^CI27"+CRLF
-		cCodigoZPL += "^FT285,494^A0R,40,40^FH\^CI28^FD"+cCodigoPA+"^FS^CI27"+CRLF
+		
+		If Len(cCodigoPA) > 20
+			cCodigoZPL += "^FT285,494^A0R,30,30^FH\^CI28^FD"+cCodigoPA+"^FS^CI27"+CRLF
+		Else
+			cCodigoZPL += "^FT285,494^A0R,40,40^FH\^CI28^FD"+cCodigoPA+"^FS^CI27"+CRLF
+		EndIf
+		
 		cCodigoZPL += "^FT206,28^A0R,30,30^FH\^CI28^FDQtd. Peso:^FS^CI27"+CRLF
 		cCodigoZPL += "^FT0170,200^A0R,60,60^FH\^CI28^FD"+cValtochar(nPeso)+"^FS^CI27"+CRLF  // Peso ajustar
 		cCodigoZPL += "^FT124,28^A0R,30,30^FH\^CI28^FDQtd. Pecas:^FS^CI27"+CRLF
@@ -319,12 +325,12 @@ Static Function getCodigoPa()
 	SA7->(dbSetOrder(2))
 
 	If SA7->(dbSeek(FWxFilial("SA7")+cCodProduto))
-		cRet := Alltrim(SA7->A7_CODCLI)
+		cRet := AllTrim(SA7->A7_CODCLI)
 	Endif
 
 	If Empty(cRet)
 		If ( SB1->(dbSeek(FWxFilial("SB1")+cCodProduto)) )
-			cRet := SB1->B1_ZCODCLI
+			cRet := AllTrim(SB1->B1_ZCODCLI)
 		Endif
 		If Empty(cRet)
 			Aadd(aLogImpressao,{cNumeroOp,cItemOp,cSequenciaOp,"Não foi possível localizar código cliente P.A."})

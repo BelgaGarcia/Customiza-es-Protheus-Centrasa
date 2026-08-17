@@ -189,6 +189,7 @@ Static Function alteraDadosLote()
 	If !Empty(aRetorno[20][nProduto])
 		If !Empty(aRetorno[20][nProduto][1])
 			aRetorno[20][nProduto][1]	:= cNumeroInspecao
+			aRetorno[20][nProduto][2]	:= aProdutos[nProduto][9]
 			aRetorno[20][nProduto][3]	:= SF2->F2_EMISSAO
 			aRetorno[20][nProduto][4]	:= SF2->F2_EMISSAO
 		EndIf

@@ -1941,7 +1941,8 @@ Static Function queryBuscaSaldoTotal()
 	cQuery += " WHERE " + CRLF
 	cQuery += " 	    1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
-	cQuery += " 		AND B8_LOTECTL  = '"+(cAliasTela)->C5_ZLOTCTL+"'" + CRLF
+	cQuery += " 		AND B8_LOCAL	= '"+(cAliasTela)->C2_LOCAL+"' " + CRLF
+	cQuery += " 		AND B8_LOTECTL  = '"+(cAliasTela)->C5_ZLOTCTL+"' " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
 Return cQuery
 

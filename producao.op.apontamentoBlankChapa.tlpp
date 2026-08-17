@@ -1753,19 +1753,60 @@ Static Function queryBuscaSaldoTotal()
 
 	If Empty(cLote)
 		cLote	:= (cAliasTela)->C5_ZLOTCTL
+
+		cQuery += " SELECT " + CRLF
+		cQuery += "        B8_SALDO "		+ CRLF
+
+		cQuery += " FROM " + CRLF
+		cQuery += "     " + RetSQLTab("SB8") + CRLF
+
+		cQuery += " WHERE " + CRLF
+		cQuery += " 	    1 = 1 " + CRLF
+		cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
+		cQuery += " 		AND B8_LOCAL	= '"+(cAliasTela)->C2_LOCAL+"' " + CRLF
+		cQuery += " 		AND B8_LOTECTL	= '"+cLote+"' " + CRLF
+		cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
+	Else
+		cQuery += " SELECT " + CRLF
+		cQuery += "        SUM(B8_SALDO) B8_SALDO "		+ CRLF
+
+		cQuery += " FROM ( " + CRLF
+
+		cQuery += " SELECT " + CRLF
+		cQuery += "        CASE "		+ CRLF
+		cQuery += "        WHEN Z3_LOTEEMP	<> ' ' THEN SUM(Z3_PESOLIQ * (-1)) "		+ CRLF
+		cQuery += "        ELSE SUM(Z3_PESOLIQ) "		+ CRLF
+		cQuery += "        END AS B8_SALDO "		+ CRLF
+
+		cQuery += " FROM " + CRLF
+		cQuery += "     " + RetSQLTab("SZ3") + CRLF
+
+		cQuery += " WHERE " + CRLF
+		cQuery += " 	    1 = 1 " + CRLF
+		cQuery += "	 		AND " + RetSqlFil("SZ3") + CRLF
+		cQuery += " 		AND Z3_APONTOK	= 'S' " + CRLF
+		cQuery += " 		AND ( Z3_LOTECTL	= '"+cLote+"' OR Z3_LOTEEMP	= '"+cLote+"' ) " + CRLF
+		cQuery += "	    	AND " + RetSqlDel("SZ3") + CRLF
+
+		cQuery += " GROUP BY Z3_LOTEEMP " + CRLF
+
+		cQuery += " UNION ALL " + CRLF
+
+		cQuery += " SELECT " + CRLF
+		cQuery += "        SUM(Z4_PESOLIQ) AS B8_SALDO "		+ CRLF
+
+		cQuery += " FROM " + CRLF
+		cQuery += "     " + RetSQLTab("SZ4") + CRLF
+
+		cQuery += " WHERE " + CRLF
+		cQuery += " 	    1 = 1 " + CRLF
+		cQuery += "	 		AND " + RetSqlFil("SZ4") + CRLF
+		cQuery += " 		AND Z4_APONTOK	= 'S' " + CRLF
+		cQuery += " 		AND Z4_LOTECTL	= '"+cLote+"' " + CRLF
+		cQuery += "	    	AND " + RetSqlDel("SZ4") + CRLF
+
+		cQuery += " ) T" + CRLF
 	EndIf
-
-	cQuery += " SELECT " + CRLF
-	cQuery += "        B8_SALDO "		+ CRLF
-
-	cQuery += " FROM " + CRLF
-	cQuery += "     " + RetSQLTab("SB8") + CRLF
-
-	cQuery += " WHERE " + CRLF
-	cQuery += " 	    1 = 1 " + CRLF
-	cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
-	cQuery += " 		AND B8_LOTECTL  = '"+cLote+"'" + CRLF
-	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
 Return cQuery
 
 /*
@@ -1821,12 +1862,16 @@ Return cQuery
 Static Function buscaPesoApontadoTela()
 	Local nRetorno		:= 0	as numeric
 	Local nPosGrid		:= 0	as integer
+	Local cLoteEmpenho	:= ""	as character
 	Local nPosOperacao	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_OPERAC"})
 	Local nPosPesoLiq	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_PESOLIQ"})
 	Local nPosApontado	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_APONTOK"})
+	Local nPosLote		:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})
+
+	cLoteEmpenho	:= oGridApontamento:aCols[oGridApontamento:nAt][nPosLote]
 
 	For nPosGrid := 1 To Len(oGridApontamento:aCols)
-		If (nPosGrid != oGridApontamento:nAt) .And. !(oGridApontamento:aCols[nPosGrid][nPosOperacao] $ "ST/SD") .And. !(oGridApontamento:aCols[nPosGrid][nPosApontado] == "S")
+		If (nPosGrid != oGridApontamento:nAt) .And. !(oGridApontamento:aCols[nPosGrid][nPosOperacao] $ "ST/SD") .And. !(oGridApontamento:aCols[nPosGrid][nPosApontado] == "S") .And. oGridApontamento:aCols[nPosGrid][nPosLote] == cLoteEmpenho
 			nRetorno	+= oGridApontamento:aCols[nPosGrid][nPosPesoLiq]
 		EndIf
 	Next nPosGrid
