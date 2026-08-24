@@ -2091,7 +2091,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 								EndIf
 								// OBS: Verificar comportamento
 								lSAgrgICM	:= ValType(oICMSCfg['regras_escrituracao']) == "J" .AND. oICMSCfg['regras_escrituracao']['acao_total_nf'] $ '5/6'
-								lNAgrgICM	:= (cAliasSD2)->D2_TIPO $ "P/I" .Or. lRegB2580 .or. IIF(SF2->(FieldPos("F2_GOVOPER")) > 0, SF2->F2_GOVOPER=="2",.F.)
+								lNAgrgICM	:= SF4->F4_AGREG == "N" .Or. lRegB2580 .Or. IIF(SF2->(FieldPos("F2_GOVOPER")) > 0, SF2->F2_GOVOPER=="2",.F.)
 								// Verificar como identificar  F4_AGREG = D
 								lDAgrgICM	:= oICMSCfg['codigo_tributo_relacionado'] == '000050'// 'DED   '
 								lICMSDif	:= ValType(oICMSCfg['regras_escrituracao']) == "J" .AND. oICMSCfg['regras_escrituracao']['perc_diferimento'] > 0
@@ -2124,7 +2124,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 
 								If lConfTrib .AND. (oCPSTCfg <> NIL .OR. oCPCTCfg <> NIL .or. (oCPCfg <> NIL .and. ValType(oCPCfg['regras_escrituracao']) == "J" .and. oCPCfg['regras_escrituracao']['acao_total_nf'] <> '1'))
 									lICMCP	:= .T.
-								Else
+								ElseIf !lConfTrib
 									lICMCP	:= SF4->F4_AGREGCP $ "1|S"
 								EndIf
 
@@ -3230,7 +3230,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 								
 								cIndTot := "1"
 								
-								IF ( lNAgrgICM .And. !AllTrim(SF4->F4_CF) $ cMVCfopTran ) .Or. ( lIssSim .And. !lCalICM )
+								IF lNAgrgICM
 									cIndTot := "0"
 								EndIf
 
@@ -5244,7 +5244,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 						If ValType(oICMSCfg['regras_escrituracao']) == "J" .AND. oICMSCfg['regras_escrituracao']['tabela_cst'] == '000002'
 							cSitICMSN	:= oICMSCfg['regras_escrituracao']['cst']
 						EndIf
-						lNAgrgICM	:= (cAliasSD1)->D1_TIPO $ "I/P/C" .Or. lRegB2580 .or. iif(SF1->(FieldPos("F1_OPGOV")) > 0, SF1->F1_OPGOV == "2", .F.)
+						lNAgrgICM	:= SF4->F4_AGREG == "N" .Or. lRegB2580 .Or. iif(SF1->(FieldPos("F1_OPGOV")) > 0, SF1->F1_OPGOV == "2", .F.)
 						// Verificar como identificar  F4_AGREG = D
 						lDAgrgICM	:= oICMSCfg['codigo_tributo_relacionado'] == '000050'// 'DED   '
 						lICMSDif	:= ValType(oICMSCfg['regras_escrituracao']) == "J" .AND. oICMSCfg['regras_escrituracao']['perc_diferimento'] > 0
@@ -5262,9 +5262,9 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 						lDifExp		:= "66.66" $ Alltrim(Str(SF4->F4_PICMDIF))
 					EndIf
 
-					If lConfTrib .AND. ( oCPCfg <> NIL .OR. oCPSTCfg <> NIL .OR. oCPCTCfg <> NIL )
+					If lConfTrib .AND. (oCPSTCfg <> NIL .OR. oCPCTCfg <> NIL .or. (oCPCfg <> NIL .and. ValType(oCPCfg['regras_escrituracao']) == "J" .and. oCPCfg['regras_escrituracao']['acao_total_nf'] <> '1'))
 						lICMCP	:= .T.
-					Else
+					ElseIf !lConfTrib
 						lICMCP	:= SF4->F4_AGREGCP $ "1|S"
 					EndIf
 
@@ -5784,8 +5784,8 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 
 					If (SFT->(ColumnPos("FT_CRDPRES")) <> 0 .And. SFT->FT_CRDPRES > 0)
 						nTotCrdP += SFT->FT_CRDPRES
-						If	( lICMCP )
-						nCrdPres := SFT->FT_CRDPRES
+						If (lICMCP)
+							nCrdPres := SFT->FT_CRDPRES
 						Endif
 					EndIf
 
@@ -6010,9 +6010,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 
 					cIndTot := "1"
 
-					IF !lNAgrgICM .And. lIssSim
-						cIndTot := "1"
-					ElseIf  lNAgrgICM .OR. (lIssSim .And. !lCalICM)
+					If lNAgrgICM
 						cIndTot := "0"
 					EndIf
 
@@ -7336,6 +7334,7 @@ Static Function NfeIde(cChave,aNota,cNatOper,aDupl,aNfVinc,cVerAmb,aNfVincRur,aR
 	Local aEntGov		:= {}
 	Local cindop		:= ''
 	Local cAmbiente		:= PARAMIXB[3]
+	local lHasNewTrib	:= .F.
 		
 	Default cCST		:= ""
 	default cModalid	:= ""
@@ -7415,7 +7414,7 @@ Static Function NfeIde(cChave,aNota,cNatOper,aDupl,aNfVinc,cVerAmb,aNfVincRur,aR
 	EndIf
 
 	//Para essas regras específicas, o documento referenciado deve ser informado na tag <NfRef>
-	If lExisteDkn .and. ( aNota[05] == '5' .or. (aNota[05] == '6' .and. !aNota[11] $ '3|4|6|7') )
+	If lExisteDkn .and. ( (aNota[05] == '5' .And. !aNota[11] $ "6") .or. (aNota[05] == '6' .and. !aNota[11] $ '3|4|6|7') )
 		cAliasRef := GetDocRef(aNota)
 		while (cAliasRef)->(!eof())
 			if (cAliasRef)->(RecNo()) = 1
@@ -7695,8 +7694,10 @@ Static Function NfeIde(cChave,aNota,cNatOper,aDupl,aNfVinc,cVerAmb,aNfVincRur,aR
 			//aEntGov[2] - Tipo de Operação
 			//aEntGov[3] - Percentual de redução
 			//aEntGov[4] - Array com chave de acesso de documentos fiscais anteriores
-			aEntGov := DadosTagCG(aNota[4], oNfTciIntg)
-			cString += CompraGov(aEntGov)
+			aEntGov := DadosTagCG(aNota[4], oNfTciIntg, @lHasNewTrib)
+			if len(aEntGov) > 0 .and. lHasNewTrib
+				cString += CompraGov(aEntGov)
+			endIf
 		endif	
 
 		//Nota (modelo 55) que contém pagamento antecipado
@@ -8329,8 +8330,10 @@ Static Function NfeItem(aProd		, aICMS			, aICMSST	, aIPI			, aPIS	   		, aPISST
 		cString += '</DI>'
 		/*Impressão dos dados da DI nas informações complementares do Danfe - CH:TELKDV*/
 		If lDInoDanfe
-			cMsgDI  := " "
-			cMsgDI += "(Numero DI: "+ConvType(aDI[04][03])+ ", "
+			cMsgDI  := "(Numero DI: "+ConvType(aDI[04][03])+ ", "
+			If Len(AllTrim(aDI[04][03])) >= 15
+				cMsgDI := "(Numero DUIMP: "+ConvType(aDI[04][03])+ ", "
+			EndIf
 			cMsgDI += "Local do Desembaraco: "+ConvType(aDI[06][03])+ ", "
 			cMsgDI += "UF do Desembaraco: "+ConvType(aDI[07][03])+", "
 			cMsgDI += "Data do Desembaraco: "+ConvType(aDI[08][03])+ ") "	
@@ -8365,8 +8368,10 @@ Static Function NfeItem(aProd		, aICMS			, aICMSST	, aIPI			, aPIS	   		, aPISST
 		cString += '</DI>'
 		/*Impressão dos dados da DI nas informações complementares do Danfe - CH:TELKDV*/
 		If lDInoDanfe
-			cMsgDI := " "
-			cMsgDI += "(Numero DI: "+ConvType(aDI[02][03])+ ", "
+			cMsgDI  := "(Numero DI: "+ConvType(aDI[04][03])+ ", "
+			If Len(AllTrim(aDI[04][03])) >= 15
+				cMsgDI := "(Numero DUIMP: "+ConvType(aDI[04][03])+ ", "
+			EndIf
 			cMsgDI += "Local do Desembaraco: "+ConvType(aDI[04][03])+ ", "
 			cMsgDI += "UF do Desembaraco: "+ConvType(aDI[05][03])+", "
 			cMsgDI += "Data do Desembaraco: "+ConvType(aDI[06][03])+ ") "	
@@ -9998,8 +10003,8 @@ Static Function NfeItem(aProd		, aICMS			, aICMSST	, aIPI			, aPIS	   		, aPISST
 		cString += '<vItem>' + ConvType(nTotalItem,15,2) + '</vItem>'
 	endif	
 
-	if aNota[05] == '6' .and. aNota[11] $ '3|4|7'
-		cString += GetTagRef(aNota, aProd[55])
+	if aNota[05] == '6' .and. aNota[11] $ '3|4|7' .Or. aNota[05] == '5' .and. aNota[11] $ '6'
+		cString += GetTagRef(aNota, aProd[55]) 
 	endif	
 	
 	//Se for nota de devolução, a nota de origem deve ser referenciada no grupo de referenciamento por item
@@ -14409,7 +14414,7 @@ Static Function GetDocRef(aDocAjuste, cItem)
 	//Se for entrada o tipo de movimento da DKN é 1, se for saída é 2, execto os que invertem cliente e fornecedores:
 	//5-Credito com 3-Transferencia de Credito na sucessao
 	//6-Nota de Debito e 7-Perda em estoque
-	if (aDocAjuste[5] $ '5|6') .and. ((aDocAjuste[4] == '0' .and. !aDocAjuste[11] $ "3,4,5") .or. (aDocAjuste[4] == '1' .and. aDocAjuste[11] $ "1,2,5,7"))
+	if (aDocAjuste[5] $ '5|6') .and. ((aDocAjuste[4] == '0' .and. !aDocAjuste[11] $ "3,4,5,6") .or. (aDocAjuste[4] == '1' .and. aDocAjuste[11] $ "1,2,5,7"))
 		cTipoMov := '1'
 	endIf
 
@@ -14623,24 +14628,27 @@ Valida se deve ou não ser gerada a tag gCompraGov no XML
 @param cTipoNF, caracter, 0 = Entrada e 1 = Saida
 @param oCfgTrib, objeto, Informações relacionadas aos impostos gerados através do configurador de tributos
 @return aDadosRet, array, Array com dados para gerar a tag*/
-Static Function DadosTagCG(cTipoNF, oCfgTrib)
-	Local aDadosRet  := {}
-	Local oDadosIdNf := oCfgTrib:GetNfDataId()
-	Local cCodRegra  := ''
-	Local cPercRedu  := ''
-	Local cQuery := ''
-	Local oQryOrigem := FwExecStatement():New()
-	Local nSeqBind := 0
-	Local cAliasQry := ''
-	Local aChvOrigem := {}
-	Local i := 0
-	Local aIdsTrib := oDadosIdNf['dados_Id']:GetNames()
+Static Function DadosTagCG(cTipoNF, oCfgTrib, lHasNewTrib)
+	Local aDadosRet  	:= {}
+	Local aChvOrigem 	:= {}
+	Local cCodRegra  	:= ''
+	Local cQuery 		:= ''
+	Local cAliasQry 	:= ''
+	Local nSeqBind 		:= 0
+	Local nPercRedu  	:= 0
+	Local i 			:= 0
+	Local oQryOrigem 	:= FwExecStatement():New()
+	Local oDadosIdNf 	:= oCfgTrib:GetNfDataId()
+	Local aIdsTrib 		:= oDadosIdNf['dados_Id']:GetNames()
+	
+	default lHasNewTrib	:= .F.
 
 	for i := 1 to len(aIdsTrib)
 		cCodRegra := GetRegRTC(oDadosIdNf,aIdsTrib[i]) 
-		if !empty(cCodRegra)
+		If !empty(cCodRegra)
+			lHasNewTrib := .T.
 			if oDadosIdNf['dados_Id'][aIdsTrib[i]][cCodRegra]['dados_escriturados']:HasProperty('perc_red_adc')
-				cPercRedu := oDadosIdNf['dados_Id'][aIdsTrib[i]][cCodRegra]['dados_escriturados']['perc_red_adc']
+				nPercRedu := oDadosIdNf['dados_Id'][aIdsTrib[i]][cCodRegra]['dados_escriturados']['perc_red_adc']
 			endif
 		endif
 	next
@@ -14677,7 +14685,7 @@ Static Function DadosTagCG(cTipoNF, oCfgTrib)
 
 		aadd(aDadosRet, SuperGetMv('MV_GSENTGV', .f., ''))
 		aadd(aDadosRet, iIf(SF1->(FieldPos("F1_OPGOV")) > 0, SF1->F1_OPGOV, ""))
-		aadd(aDadosRet, cPercRedu )
+		aadd(aDadosRet, nPercRedu )
 		aadd(aDadosRet, aChvOrigem)
 	else
 		//Tipos 2 ou 3 devem levar a chave do documento de origem.
@@ -14730,7 +14738,7 @@ Static Function DadosTagCG(cTipoNF, oCfgTrib)
 
 		aadd( aDadosRet, GetAdvFVal('AI0','AI0_ENTGOV', xFilial( 'AI0' ) + SF2->(F2_CLIENTE+F2_LOJA), 1))
 		aadd( aDadosRet, IIF(SF2->(FieldPos("F2_GOVOPER")) > 0, SF2->F2_GOVOPER,''))
-		aadd( aDadosRet, cPercRedu)
+		aadd( aDadosRet, nPercRedu)
 		aadd( aDadosRet, aChvOrigem)
 
 	endif

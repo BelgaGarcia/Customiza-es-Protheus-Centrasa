@@ -33,6 +33,7 @@ User Function quartaNota(aDadosNF)
 	Private cNumeroInspecao				:= ""	as character
 	Private cLoteBobina					:= ""	as character
 	Private cNumeroNotaCliente			:= ""	as character
+	Private cItemNotaCliente			:= ""	as character
 	Private cClienteNota				:= ""	as character
 	Private cLojaNota					:= ""	as character
 	Private lRefaturamento				:= .F.	as logical
@@ -220,6 +221,7 @@ Static Function notaUsina()
 			cNumeroInspecao		:= (cAlias)->D1_LOTEFOR
 			cLoteBobina			:= (cAlias)->D1_LOTECTL
 			cNumeroNotaCliente	:= (cAlias)->DH_DOC
+			cItemNotaCliente	:= (cAlias)->DH_ITEM
 			cClienteNota		:= (cAlias)->DH_CLIENTE
 			cLojaNota			:= (cAlias)->DH_LOJACLI
 		Else
@@ -233,6 +235,7 @@ Static Function notaUsina()
 			cNumeroInspecao		:= (cAlias)->D1_LOTEFOR
 			cLoteBobina			:= (cAlias)->D1_LOTECTL
 			cNumeroNotaCliente	:= (cAlias)->D1_DOC
+			cItemNotaCliente	:= (cAlias)->D1_ITEM
 		EndIf
 	EndIf
 
@@ -248,6 +251,7 @@ Static Function queryNotaUsina()
 	cQuery += " SELECT " + CRLF
 	cQuery += "        D1_DOC "	+ CRLF
 	cQuery += "        ,D1_SERIE "	+ CRLF
+	cQuery += "        ,D1_ITEM "	+ CRLF
 	cQuery += "        ,D1_TIPO "	+ CRLF
 	cQuery += "        ,D1_FORNECE "	+ CRLF
 	cQuery += "        ,D1_LOJA "	+ CRLF
@@ -257,6 +261,7 @@ Static Function queryNotaUsina()
 	cQuery += "        ,D1_LOTECTL "	+ CRLF
 	cQuery += "        ,D1_ZNFUSIN "	+ CRLF
 	cQuery += "        ,DH_DOC "	+ CRLF
+	cQuery += "        ,DH_ITEM "	+ CRLF
 	cQuery += "        ,DH_CLIENTE "	+ CRLF
 	cQuery += "        ,DH_LOJACLI "	+ CRLF
 
@@ -288,6 +293,7 @@ Static Function queryNotaUsina()
 	cQuery += " 	    DH_FILIAL = D1_FILIAL " + CRLF
 	cQuery += " 	    AND DH_NDOC = D1_DOC " + CRLF
 	cQuery += " 	    AND DH_SDOC = D1_SERIE " + CRLF
+	cQuery += " 	    AND DH_ITEM = D1_ITEM " + CRLF
 	cQuery += "	    	AND " + RetSqlDel("SDH") + CRLF
 
 	cQuery += " WHERE " + CRLF
@@ -348,6 +354,7 @@ Static Function queryDadosQuartaNota()
 	cQuery += " 	    1 = 1 " + CRLF
 	cQuery += "	 		AND " + RetSqlFil("SDH") + CRLF
 	cQuery += " 		AND DH_DOC  = '"+cNumeroNotaCliente+"' " + CRLF
+	cQuery += " 		AND DH_ITEM  = '"+cItemNotaCliente+"' " + CRLF
 	cQuery += " 		AND DH_CLIENTE  = '"+cClienteNota+"' " + CRLF
 	cQuery += " 		AND DH_LOJACLI  = '"+cLojaNota+"' " + CRLF
 	cQuery += " 		AND DH_TPMOV  = '2' " + CRLF
