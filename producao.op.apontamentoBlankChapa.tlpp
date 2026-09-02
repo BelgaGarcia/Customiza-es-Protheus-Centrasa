@@ -808,7 +808,7 @@ User Function validaDeleteLinhaBlankChapa()
 	Local lRetorno	:= .F.	as logical
 
 	If oGridApontamento:nAt == Len(oGridApontamento:aCols)
-		If oGridApontamento:aCols[oGridApontamento:nAt][27] == "S"
+		If oGridApontamento:aCols[oGridApontamento:nAt][28] == "S"
 			FWAlertWarning("Linha já apontada não pode ser deletada.", "Delete")
 		Else
 			lRetorno	:= .T.
