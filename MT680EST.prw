@@ -19,6 +19,10 @@ User Function MT680EST()
 		FWMsgRun(, {|oSay| lRet := dsm.genericos.U_fRemItemPedidoVendaProducao(oSay) }, "Processando", "Estornando item no pedido de vendas...")
 	EndIf
 
+	If FindFunction("producao.op.u_estornarApontamentoCockpit")
+		lRet := producao.op.u_estornarApontamentoCockpit()
+	Endif
+
 	RestArea(aArea)
 
 Return lRet

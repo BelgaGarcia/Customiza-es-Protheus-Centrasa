@@ -1704,31 +1704,93 @@ Static Function validaSaldoPeso()
 	Local cLoteEmpenho			:= ""	as character
 	Local nPosLote				:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})
 
-	nSaldoTotal			:= buscaSaldoTotal()
-	nSaldoPlano			:= buscaSaldoPlano()
-	nPesoApontadoTela	:= buscaPesoApontadoTela()
+	If verificaValidacaoDeSaldo()
+		nSaldoTotal			:= buscaSaldoTotal()
+		nSaldoPlano			:= buscaSaldoPlano()
+		nPesoApontadoTela	:= buscaPesoApontadoTela()
 
-	cLoteEmpenho	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])
-	nPesoApontado	:= IIF(lApontamentoFinal, SZ3->Z3_PESOLIQ, XX_PESOLIQ)
+		cLoteEmpenho	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])
+		nPesoApontado	:= IIF(lApontamentoFinal, SZ3->Z3_PESOLIQ, XX_PESOLIQ)
 
-	If lApontamentoFinal
-		If nSaldoTotal < nPesoApontado
-			lRetorno	:= .F.
-		ElseIf Empty(cLoteEmpenho)
-			If nSaldoPlano < nPesoApontado
-				FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+		If lApontamentoFinal
+			If nSaldoTotal < nPesoApontado
+				lRetorno	:= .F.
+			ElseIf Empty(cLoteEmpenho)
+				If nSaldoPlano < nPesoApontado
+					FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+				EndIf
 			EndIf
-		EndIf
-	Else
-		If ( nSaldoTotal - nPesoApontadoTela ) < nPesoApontado
-			lRetorno	:= .F.
-		ElseIf Empty(cLoteEmpenho)
-			If ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado
-				FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+		Else
+			If ( nSaldoTotal - nPesoApontadoTela ) < nPesoApontado
+				lRetorno	:= .F.
+			ElseIf Empty(cLoteEmpenho)
+				If ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado
+					FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
+				EndIf
 			EndIf
 		EndIf
 	EndIf
 Return lRetorno
+
+/*
+	Verifica se deve validar Saldo
+*/
+Static Function verificaValidacaoDeSaldo()
+	Local lRetorno			:= .T.	as logical
+	Local cQuery			:= ""	as character
+	Local cAliasEmpenho		:= ""	as character
+	Local cSubGrupos		:= AllTrim(GetNewPar("FS_SUBVSLD", ""))	as character
+	Local cUnidadeMedidas	:= AllTrim(GetNewPar("FS_UMVSLD", ""))	as character
+
+	cQuery		:= queryVerificaValidacaoDeSaldo()
+
+	MPSysOpenQuery( cQuery, cAliasEmpenho := GetNextAlias() )
+
+	(cAliasEmpenho)->(DbGoTop())
+	If (cAliasEmpenho)->(!EoF())
+		If SubStr((cAliasEmpenho)->B1_COD, 1, 4) $ cSubGrupos .And. (cAliasEmpenho)->B1_UM $ cUnidadeMedidas
+			lRetorno	:= .F.
+		EndIf
+	EndIf
+
+	(cAliasEmpenho)->(DbCloseArea())
+Return lRetorno
+
+/*
+	Query verifica se deve validar Saldo
+*/
+Static Function queryVerificaValidacaoDeSaldo()
+	Local cQuery	:= ""	as character
+	Local cLote		:= ""	as character
+	Local nPosLote	:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})
+
+	cLote	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])
+
+	If Empty(cLote)
+		cLote	:= (cAliasTela)->C5_ZLOTCTL
+	EndIf
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        B1_COD "		+ CRLF
+	cQuery += "        ,B1_UM "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SB8") + CRLF
+
+	cQuery += " INNER JOIN " + CRLF
+	cQuery += "     " + RetSQLTab("SB1") + CRLF
+	cQuery += "     	ON" + CRLF
+	cQuery += " 	    " + RetSqlFil("SB1") + CRLF
+	cQuery += " 	    AND B1_COD = B8_PRODUTO" + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF
+	cQuery += " 		AND B8_LOCAL	= '"+(cAliasTela)->C2_LOCAL+"' " + CRLF
+	cQuery += " 		AND B8_LOTECTL	= '"+cLote+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SB8") + CRLF
+Return cQuery
 
 /*
 	Busca saldo produto utilizado

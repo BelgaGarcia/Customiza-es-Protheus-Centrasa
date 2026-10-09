@@ -1,0 +1,77 @@
+#include "tlpp-core.th"
+#include "protheus.ch"
+
+#define CRLF chr(13) + chr(10)
+
+namespace producao.op
+
+/*/{Protheus.doc} estornarApontamentoCockpit
+
+Estornar Apontamento Cockpit
+
+@type Function
+@author Gabriel Goncalves
+@since 25/09/2026
+@version P12
+@database MSSQL
+
+/*/
+User Function estornarApontamentoCockpit()
+	Local lRetorno			:= .T.	as logical
+	Local cQuery			:= ""	as character
+	Local cAliasApontamento	:= ""	as character
+
+	cQuery	:= queryBuscarApontamentoCockpit()
+
+	MPSysOpenQuery( cQuery, cAliasApontamento := GetNextAlias() )
+
+	(cAliasApontamento)->(DbGoTop())
+	If (cAliasApontamento)->(!EoF())
+		DbSelectArea((cAliasApontamento)->TABELA)
+
+		If ((cAliasApontamento)->TABELA)->(DbGoTo((cAliasApontamento)->RECTAB))
+			RecLock((cAliasApontamento)->TABELA, .F.)
+				((cAliasApontamento)->TABELA)->(DbDelete())
+			((cAliasApontamento)->TABELA)->(MsUnLock())
+		EndIf
+	EndIf
+
+	(cAliasApontamento)->(DbCloseArea())
+Return lRetorno
+
+/*
+	Query busca apontamento
+*/
+Static Function queryBuscarApontamentoCockpit()
+	Local cQuery	:= ""	as character
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        'SZ3' AS TABELA "		+ CRLF
+	cQuery += "        ,R_E_C_N_O_ AS RECTAB "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SZ3") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ3") + CRLF
+	cQuery += " 		AND Z3_APONTOK	= 'S' " + CRLF
+	cQuery += " 		AND Z3_LOTECTL	= '"+SH6->H6_LOTECTL+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ3") + CRLF
+
+	cQuery += " UNION ALL " + CRLF
+
+	cQuery += " SELECT " + CRLF
+	cQuery += "        'SZ4' AS TABELA "		+ CRLF
+	cQuery += "        ,R_E_C_N_O_ AS RECTAB "		+ CRLF
+
+	cQuery += " FROM " + CRLF
+	cQuery += "     " + RetSQLTab("SZ4") + CRLF
+
+	cQuery += " WHERE " + CRLF
+	cQuery += " 	    1 = 1 " + CRLF
+	cQuery += "	 		AND " + RetSqlFil("SZ4") + CRLF
+	cQuery += " 		AND Z4_APONTOK	= 'S' " + CRLF
+	cQuery += " 		AND Z4_LOTECTL	= '"+SH6->H6_LOTECTL+"' " + CRLF
+	cQuery += "	    	AND " + RetSqlDel("SZ4") + CRLF
+Return cQuery
