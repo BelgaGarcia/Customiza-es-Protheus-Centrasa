@@ -7049,7 +7049,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 						aAgrPis, aAgrCofins, aICMUFDest,;
 						aIPIDevol, aItemVinc, aLote,;
 						aICMSMono, aBenef, aCredPresum, aDeson,;
-						aTotalItem)
+						aTotalItem, aCSTIPI)
 
 					aProd		:= aParam[1]
 					aICMS		:= aParam[2]
@@ -7086,6 +7086,7 @@ User Function XmlNfeSef(cTipo,cSerie,cNota,cClieFor,cLoja,cNotaOri,cSerieOri)
 					aCredPresum	:= aParam[33]
 					aDeson		:= aParam[34]
 					aTotalItem	:= aParam[35]
+					aCSTIPI		:= aParam[36]
 				EndIf
 
 				// Altera a natureza da nota
@@ -7435,7 +7436,7 @@ Static Function NfeIde(cChave,aNota,cNatOper,aDupl,aNfVinc,cVerAmb,aNfVincRur,aR
 		(cAliasRef)->(DbCloseArea())
 	endif
 	
-	If(!Empty(aNfVinc)	.or. !empty(aNfVCdd)) 
+	If( ( !Empty(aNfVinc) .or. !empty(aNfVCdd) ) .And. !( lExisteDkn .And. aNota[05] $ '5|6' ) )
 		if (!aNota[12] .or. !Nt2500240(cAmbiente))  .and. (cTpNota != '4' .or. !Nt250024D(cAmbiente))
  			if !lChvCdd  //preenchimento da tag usando a tabela CDD
 				cString += '<NFRef>'
@@ -14314,20 +14315,25 @@ Retorna o grupo gPagAntecipado
 static function GetTagPAnt(aDocDebito)
 	Local cString	:= ''
 	Local cAliasPA 	:= ''
+	Local cChvPAnt	:= ''		
+	Local cTagsRef	:= ''		
 
 	cAliasPA := GetDocRef(aDocDebito)
 
-	If (cAliasPA)->(!eof())
-		cString += '<gPagAntecipado>'
-		while (cAliasPA)->(!eof())
-			cString += '<refNFe>' + (cAliasPA)->DKN_CHVNFE + '</refNFe>'
-			(cAliasPA)->(dbSkip())
-		enddo
-		cString +='</gPagAntecipado>'
+	while (cAliasPA)->(!eof())
+		If !Empty((cAliasPA)->DKN_CHVNFE) .And. !( (cAliasPA)->DKN_CHVNFE $ cChvPAnt )
+			cTagsRef += '<refNFe>' + (cAliasPA)->DKN_CHVNFE + '</refNFe>'
+			cChvPAnt += (cAliasPA)->DKN_CHVNFE + '-'
+		EndIf
+		(cAliasPA)->(dbSkip())
+	enddo
+
+	If !Empty(cTagsRef)
+		cString := '<gPagAntecipado>' + cTagsRef + '</gPagAntecipado>'
 	EndIf
 
 	(cAliasPA)->(DbCloseArea())
-	
+
 return cString
 
 //-----------------------------------------------------------------------

@@ -1822,6 +1822,14 @@ Static Function queryBuscaSaldoTotal()
 		cQuery += " FROM " + CRLF
 		cQuery += "     " + RetSQLTab("SB8") + CRLF
 
+		cQuery += " INNER JOIN " + CRLF
+		cQuery += "     " + RetSQLTab("SB1") + CRLF
+		cQuery += "     	ON" + CRLF
+		cQuery += " 	    " + RetSqlFil("SB1") + CRLF
+		cQuery += " 	    AND B1_COD = B8_PRODUTO" + CRLF
+		cQuery += " 	    AND B1_TIPO <> 'PA'" + CRLF
+		cQuery += "	    	AND " + RetSqlDel("SB1") + CRLF
+
 		cQuery += " WHERE " + CRLF
 		cQuery += " 	    1 = 1 " + CRLF
 		cQuery += "	 		AND " + RetSqlFil("SB8") + CRLF

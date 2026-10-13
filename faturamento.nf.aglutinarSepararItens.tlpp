@@ -22,7 +22,7 @@ User Function aglutinarSepararItens(aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, a
 									aAgrPis, aAgrCofins, aICMUFDest,;
 									aIPIDevol, aItemVinc, aLote,;
 									aICMSMono, aBenef, aCredPresum, aDeson,;
-									aTotalItem)
+									aTotalItem, aCSTIPI)
 
 	Private aRetorno			:= {aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, aCOFINS, aCOFINSST, aISSQN, aCST,;
 									aMed, aArma, aveicProd, aDI, aAdi, aExp, aPisAlqZ, aCofAlqZ, aAnfI,;
@@ -30,7 +30,7 @@ User Function aglutinarSepararItens(aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, a
 									aAgrPis, aAgrCofins, aICMUFDest,;
 									aIPIDevol, aItemVinc, aLote,;
 									aICMSMono, aBenef, aCredPresum, aDeson,;
-									aTotalItem}	as array
+									aTotalItem, aCSTIPI}	as array
 
 	Private aProdOriginal		:= aProd	as array
 	Private aICMSOriginal		:= aICMS	as array
@@ -67,6 +67,7 @@ User Function aglutinarSepararItens(aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, a
 	Private aCredPresumOriginal	:= aCredPresum	as array
 	Private aDesonOriginal		:= aDeson	as array
 	Private aTotalItemOriginal	:= aTotalItem	as array
+	Private aCSTIPIOriginal		:= aCSTIPI	as array
 
 	Private aProdAglutinado			:= {}	as array
 	Private aICMSAglutinado			:= {}	as array
@@ -103,6 +104,7 @@ User Function aglutinarSepararItens(aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, a
 	Private aCredPresumAglutinado	:= {}	as array
 	Private aDesonAglutinado		:= {}	as array
 	Private aTotalItemAglutinado	:= {}	as array
+	Private aCSTIPIAglutinado		:= {}	as array
 
 	Private aItensAglutinar		:= {}	as array
 	Private aItensNaoAglutinar	:= {}	as array
@@ -120,7 +122,7 @@ User Function aglutinarSepararItens(aProd, aICMS, aICMSST, aIPI, aPIS, aPISST, a
 						aAgrPisAglutinado, aAgrCofinsAglutinado, aICMUFDestAglutinado,;
 						aIPIDevolAglutinado, aItemVincAglutinado, aLoteAglutinado,;
 						aICMSMonoAglutinado, aBenefAglutinado, aCredPresumAglutinado, aDesonAglutinado,;
-						aTotalItemAglutinado}
+						aTotalItemAglutinado, aCSTIPIAglutinado}
 	EndIf
 Return aRetorno
 
@@ -690,6 +692,7 @@ Static Function preencheArraysAglutinados(nPosOriginal)
 	aAdd(aBenefAglutinado,		aClone(aBenefOriginal[nPosOriginal]))
 	aAdd(aCredPresumAglutinado,	aClone(aCredPresumOriginal[nPosOriginal]))
 	aAdd(aDesonAglutinado,		aClone(aDesonOriginal[nPosOriginal]))
+	aAdd(aCSTIPIAglutinado,		aClone(aCSTIPIOriginal[nPosOriginal]))
 
 	nPosTotal	:= aScan(aTotalItemOriginal,{ |x| x[1] == aProdOriginal[nPosOriginal][55] })
 	If nPosTotal > 0
