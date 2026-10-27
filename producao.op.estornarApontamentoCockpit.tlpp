@@ -29,7 +29,8 @@ User Function estornarApontamentoCockpit()
 	If (cAliasApontamento)->(!EoF())
 		DbSelectArea((cAliasApontamento)->TABELA)
 
-		If ((cAliasApontamento)->TABELA)->(DbGoTo((cAliasApontamento)->RECTAB))
+		((cAliasApontamento)->TABELA)->(DbGoTo((cAliasApontamento)->RECTAB))
+		If ((cAliasApontamento)->TABELA)->(Recno()) == (cAliasApontamento)->RECTAB
 			RecLock((cAliasApontamento)->TABELA, .F.)
 				((cAliasApontamento)->TABELA)->(DbDelete())
 			((cAliasApontamento)->TABELA)->(MsUnLock())

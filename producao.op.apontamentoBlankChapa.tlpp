@@ -1701,32 +1701,25 @@ Static Function validaSaldoPeso()
 	Local nSaldoPlano			:= 0	as numeric
 	Local nPesoApontadoTela		:= 0	as numeric
 	Local nPesoApontado			:= 0	as numeric
-	Local cLoteEmpenho			:= ""	as character
-	Local nPosLote				:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})
 
 	If verificaValidacaoDeSaldo()
 		nSaldoTotal			:= buscaSaldoTotal()
 		nSaldoPlano			:= buscaSaldoPlano()
 		nPesoApontadoTela	:= buscaPesoApontadoTela()
 
-		cLoteEmpenho	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])
 		nPesoApontado	:= IIF(lApontamentoFinal, SZ3->Z3_PESOLIQ, XX_PESOLIQ)
 
 		If lApontamentoFinal
 			If nSaldoTotal < nPesoApontado
 				lRetorno	:= .F.
-			ElseIf Empty(cLoteEmpenho)
-				If nSaldoPlano < nPesoApontado
-					FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
-				EndIf
+			ElseIf nSaldoPlano < nPesoApontado
+				FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
 			EndIf
 		Else
 			If ( nSaldoTotal - nPesoApontadoTela ) < nPesoApontado
 				lRetorno	:= .F.
-			ElseIf Empty(cLoteEmpenho)
-				If ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado
-					FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
-				EndIf
+			ElseIf ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado
+				FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")
 			EndIf
 		EndIf
 	EndIf
@@ -1893,9 +1886,9 @@ Static Function buscaSaldoPlano()
 
 	(cAliasSaldo)->(DbGoTop())
 	While (cAliasSaldo)->(!EoF())
-		If (cAliasSaldo)->C6_ITEM == "01"
+		If (cAliasSaldo)->C6_ITEM == SubStr((cAliasTela)->TMP_ORDEM,7,2)
 			nRetorno	+= (cAliasSaldo)->C6_ZPESO
-		ElseIf !Empty((cAliasSaldo)->C6_LOTECTL)
+		ElseIf (cAliasSaldo)->C6_ITEMOP == SubStr((cAliasTela)->TMP_ORDEM,7,2)
 			nRetorno	-= (cAliasSaldo)->C6_ZPESO
 		EndIf
 
@@ -1914,7 +1907,7 @@ Static Function queryBuscaSaldoPlano()
 	cQuery += " SELECT " + CRLF
 	cQuery += "        C6_ITEM "		+ CRLF
 	cQuery += "        ,C6_ZPESO "		+ CRLF
-	cQuery += "        ,C6_LOTECTL "	+ CRLF
+	cQuery += "        ,C6_ITEMOP "		+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SC6") + CRLF

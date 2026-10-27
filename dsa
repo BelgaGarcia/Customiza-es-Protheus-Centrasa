@@ -1,0 +1,102 @@
+warning: in the working copy of 'Rdmake/NFComSefaz.tlpp', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/producao.op.apontamentoBlankChapa.tlpp b/producao.op.apontamentoBlankChapa.tlpp[m
+[1mindex 614ef6d..35f2f42 100644[m
+[1m--- a/producao.op.apontamentoBlankChapa.tlpp[m
+[1m+++ b/producao.op.apontamentoBlankChapa.tlpp[m
+[36m@@ -1701,32 +1701,25 @@[m [mStatic Function validaSaldoPeso()[m
+ 	Local nSaldoPlano			:= 0	as numeric[m
+ 	Local nPesoApontadoTela		:= 0	as numeric[m
+ 	Local nPesoApontado			:= 0	as numeric[m
+[31m-	Local cLoteEmpenho			:= ""	as character[m
+[31m-	Local nPosLote				:= aScan(oGridApontamento:aHeader,{|x| x[2] = "XX_LOTEEMP"})[m
+ [m
+ 	If verificaValidacaoDeSaldo()[m
+ 		nSaldoTotal			:= buscaSaldoTotal()[m
+ 		nSaldoPlano			:= buscaSaldoPlano()[m
+ 		nPesoApontadoTela	:= buscaPesoApontadoTela()[m
+ [m
+[31m-		cLoteEmpenho	:= IIF(lApontamentoFinal, SZ3->Z3_LOTEEMP, oGridApontamento:aCols[oGridApontamento:nAt][nPosLote])[m
+ 		nPesoApontado	:= IIF(lApontamentoFinal, SZ3->Z3_PESOLIQ, XX_PESOLIQ)[m
+ [m
+ 		If lApontamentoFinal[m
+ 			If nSaldoTotal < nPesoApontado[m
+ 				lRetorno	:= .F.[m
+[31m-			ElseIf Empty(cLoteEmpenho)[m
+[31m-				If nSaldoPlano < nPesoApontado[m
+[31m-					FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")[m
+[31m-				EndIf[m
+[32m+[m			[32mElseIf nSaldoPlano < nPesoApontado[m
+[32m+[m				[32mFWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")[m
+ 			EndIf[m
+ 		Else[m
+ 			If ( nSaldoTotal - nPesoApontadoTela ) < nPesoApontado[m
+ 				lRetorno	:= .F.[m
+[31m-			ElseIf Empty(cLoteEmpenho)[m
+[31m-				If ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado[m
+[31m-					FWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")[m
+[31m-				EndIf[m
+[32m+[m			[32mElseIf ( nSaldoPlano - nPesoApontadoTela ) < nPesoApontado[m
+[32m+[m				[32mFWAlertWarning("Peso apontado superior ao saldo do Plano de Corte", "Saldo do Plano")[m
+ 			EndIf[m
+ 		EndIf[m
+ 	EndIf[m
+[36m@@ -1893,9 +1886,9 @@[m [mStatic Function buscaSaldoPlano()[m
+ [m
+ 	(cAliasSaldo)->(DbGoTop())[m
+ 	While (cAliasSaldo)->(!EoF())[m
+[31m-		If (cAliasSaldo)->C6_ITEM == "01"[m
+[32m+[m		[32mIf (cAliasSaldo)->C6_ITEM == SubStr((cAliasTela)->TMP_ORDEM,7,2)[m
+ 			nRetorno	+= (cAliasSaldo)->C6_ZPESO[m
+[31m-		ElseIf !Empty((cAliasSaldo)->C6_LOTECTL)[m
+[32m+[m		[32mElseIf (cAliasSaldo)->C6_ITEMOP == SubStr((cAliasTela)->TMP_ORDEM,7,2)[m
+ 			nRetorno	-= (cAliasSaldo)->C6_ZPESO[m
+ 		EndIf[m
+ [m
+[36m@@ -1914,7 +1907,7 @@[m [mStatic Function queryBuscaSaldoPlano()[m
+ 	cQuery += " SELECT " + CRLF[m
+ 	cQuery += "        C6_ITEM "		+ CRLF[m
+ 	cQuery += "        ,C6_ZPESO "		+ CRLF[m
+[31m-	cQuery += "        ,C6_LOTECTL "	+ CRLF[m
+[32m+[m	[32mcQuery += "        ,C6_ITEMOP "		+ CRLF[m
+ [m
+ 	cQuery += " FROM " + CRLF[m
+ 	cQuery += "     " + RetSQLTab("SC6") + CRLF[m
+[1mdiff --git a/producao.op.apontamentoRolo.tlpp b/producao.op.apontamentoRolo.tlpp[m
+[1mindex 0e2c61a..6759ef6 100644[m
+[1m--- a/producao.op.apontamentoRolo.tlpp[m
+[1m+++ b/producao.op.apontamentoRolo.tlpp[m
+[36m@@ -2022,9 +2022,9 @@[m [mStatic Function buscaSaldoPlano()[m
+ [m
+ 	(cAliasSaldo)->(DbGoTop())[m
+ 	While (cAliasSaldo)->(!EoF())[m
+[31m-		If (cAliasSaldo)->C6_ITEM == "01"[m
+[32m+[m		[32mIf (cAliasSaldo)->C6_ITEM == SubStr((cAliasTela)->TMP_ORDEM,7,2)[m
+ 			nRetorno	+= (cAliasSaldo)->C6_ZPESO[m
+[31m-		ElseIf !Empty((cAliasSaldo)->C6_LOTECTL)[m
+[32m+[m		[32mElseIf (cAliasSaldo)->C6_ITEMOP == SubStr((cAliasTela)->TMP_ORDEM,7,2)[m
+ 			nRetorno	-= (cAliasSaldo)->C6_ZPESO[m
+ 		EndIf[m
+ [m
+[36m@@ -2043,7 +2043,7 @@[m [mStatic Function queryBuscaSaldoPlano()[m
+ 	cQuery += " SELECT " + CRLF[m
+ 	cQuery += "        C6_ITEM "		+ CRLF[m
+ 	cQuery += "        ,C6_ZPESO "		+ CRLF[m
+[31m-	cQuery += "        ,C6_LOTECTL "	+ CRLF[m
+[32m+[m	[32mcQuery += "        ,C6_ITEMOP "		+ CRLF[m
+ [m
+ 	cQuery += " FROM " + CRLF[m
+ 	cQuery += "     " + RetSQLTab("SC6") + CRLF[m
+[1mdiff --git a/producao.op.estornarApontamentoCockpit.tlpp b/producao.op.estornarApontamentoCockpit.tlpp[m
+[1mindex 4d5db10..3bf5922 100644[m
+[1m--- a/producao.op.estornarApontamentoCockpit.tlpp[m
+[1m+++ b/producao.op.estornarApontamentoCockpit.tlpp[m
+[36m@@ -29,7 +29,8 @@[m [mUser Function estornarApontamentoCockpit()[m
+ 	If (cAliasApontamento)->(!EoF())[m
+ 		DbSelectArea((cAliasApontamento)->TABELA)[m
+ [m
+[31m-		If ((cAliasApontamento)->TABELA)->(DbGoTo((cAliasApontamento)->RECTAB))[m
+[32m+[m		[32m((cAliasApontamento)->TABELA)->(DbGoTo((cAliasApontamento)->RECTAB))[m
+[32m+[m		[32mIf ((cAliasApontamento)->TABELA)->(Recno()) == (cAliasApontamento)->RECTAB[m
+ 			RecLock((cAliasApontamento)->TABELA, .F.)[m
+ 				((cAliasApontamento)->TABELA)->(DbDelete())[m
+ 			((cAliasApontamento)->TABELA)->(MsUnLock())[m

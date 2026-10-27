@@ -2022,9 +2022,9 @@ Static Function buscaSaldoPlano()
 
 	(cAliasSaldo)->(DbGoTop())
 	While (cAliasSaldo)->(!EoF())
-		If (cAliasSaldo)->C6_ITEM == "01"
+		If (cAliasSaldo)->C6_ITEM == SubStr((cAliasTela)->TMP_ORDEM,7,2)
 			nRetorno	+= (cAliasSaldo)->C6_ZPESO
-		ElseIf !Empty((cAliasSaldo)->C6_LOTECTL)
+		ElseIf (cAliasSaldo)->C6_ITEMOP == SubStr((cAliasTela)->TMP_ORDEM,7,2)
 			nRetorno	-= (cAliasSaldo)->C6_ZPESO
 		EndIf
 
@@ -2043,7 +2043,7 @@ Static Function queryBuscaSaldoPlano()
 	cQuery += " SELECT " + CRLF
 	cQuery += "        C6_ITEM "		+ CRLF
 	cQuery += "        ,C6_ZPESO "		+ CRLF
-	cQuery += "        ,C6_LOTECTL "	+ CRLF
+	cQuery += "        ,C6_ITEMOP "		+ CRLF
 
 	cQuery += " FROM " + CRLF
 	cQuery += "     " + RetSQLTab("SC6") + CRLF
