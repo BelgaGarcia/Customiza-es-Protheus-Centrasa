@@ -8,6 +8,12 @@
 @version 1.0
 @return retorna array de cursores para geração do bloco K
 
+// @history 22/10/2026 - Fabio Nascimento - Chamado:15350 - INCONSISTENCIA DE SALDO ARQUIVO SPED / K200
+// Ajustes: chave completa do K200 por participante, tamanho COD_PART,
+// quebra de agrupamento e consulta SBF/SA1 por filial/produto corrente.
+// -----------------------------------------------------------------------------
+
+
 @type function
 /*/
 User Function SPDFISBLCK()
@@ -55,7 +61,7 @@ User Function SPDFISBLCK()
 	//Geração do bloco k200
 	Regk200(cAliasK200, dDataIni, dDataFin)
 
-	
+
 
 	aAdd(aRet,cAlias0210)
 	aAdd(aRet,cAliasK200)
@@ -126,6 +132,10 @@ static Function JobK200(nThread,cName,aK200,cAliasTmp,cAliSumTer,dDataAte)
 	Local nRecIni
 	Local nRecFin
 	Local cLocProc      := GetMvNNR("MV_LOCPROC",'99')
+	Local cClientAtu     := ""
+	Local cAliasSBF      := ""
+	Local cQuery         := ""
+	Local lGravaGrupo    := .F.
 
 
 
@@ -170,37 +180,52 @@ static Function JobK200(nThread,cName,aK200,cAliasTmp,cAliSumTer,dDataAte)
 			//??????????????????????
 			//?Quando mudar o produto, grava o registro ?
 			//??????????????????????
-			If cProdAtu <> (cAliasTmp)->B9_COD .OR. cClientAtu == (cAliasTmp)->(D3E_CLIENT+D3E_LOJA)
+			// CHAMADO 15350: finaliza o agrupamento quando chegar ao EOF ou mudar produto/participante
+			lGravaGrupo := (cAliasTmp)->(Eof())
+			If !lGravaGrupo
+				lGravaGrupo := cProdAtu <> (cAliasTmp)->B9_COD .Or. cClientAtu <> (cAliasTmp)->(D3E_CLIENT+D3E_LOJA)
+			EndIf
+
+			If lGravaGrupo
 				If !nSaldo == 0
-					if Posicione("SB1",1,xFilial("SB1")+AllTrim((cAliasTmp)->B9_COD),"B1_TIPO")=='MP'
-						caliasSBF:=GetNextAlias()
-						cQuery:=" SELECT BF_FILIAL, BF_PRODUTO, sum(BF_QUANT) as BF_QUANT,BF_LOCALIZ,A1_COD,A1_LOJA FROM "+RetsqlName('SBF')+" SBF "
-						cQuery+=" INNER JOIN "+RetsqlName('SA1')+" SA1 ON A1_CGC=BF_LOCALIZ AND  SA1.D_E_L_E_T_=' ' "
-						cQuery+=" where BF_PRODUTO='"+AllTrim((cAliasTmp)->B9_COD)+"'"
-						cQuery+=" AND BF_QUANT>0 and SBF.D_E_L_E_T_=' ' GROUP BY BF_FILIAL, BF_PRODUTO,BF_LOCALIZ,A1_COD,A1_LOJA "
-						cQuery := ChangeQuery( cQuery )
-						dbUseArea( .T., "TOPCONN", TcGenQry( , , cQuery ), caliasSBF, .F., .T. )
+					// CHAMADO 15350: apos o dbSkip(), usar sempre o produto que estava sendo processado
+					If Posicione("SB1",1,xFilial("SB1")+AllTrim(cProdAtu),"B1_TIPO") == "MP"
+						cAliasSBF := GetNextAlias()
+						cQuery := " SELECT SBF.BF_FILIAL, SBF.BF_PRODUTO, SUM(SBF.BF_QUANT) AS BF_QUANT, "
+						cQuery += " SBF.BF_LOCALIZ, SA1.A1_COD, SA1.A1_LOJA "
+						cQuery += " FROM " + RetSqlName("SBF") + " SBF "
+						cQuery += " INNER JOIN " + RetSqlName("SA1") + " SA1 "
+						cQuery += " ON SA1.A1_FILIAL = '" + xFilial("SA1") + "' "
+						cQuery += " AND SA1.A1_CGC = SBF.BF_LOCALIZ "
+						cQuery += " AND SA1.D_E_L_E_T_ = ' ' "
+						cQuery += " WHERE SBF.BF_FILIAL = '" + xFilial("SBF") + "' "
+						cQuery += " AND SBF.BF_PRODUTO = '" + AllTrim(cProdAtu) + "' "
+						cQuery += " AND SBF.BF_QUANT > 0 "
+						cQuery += " AND SBF.D_E_L_E_T_ = ' ' "
+						cQuery += " GROUP BY SBF.BF_FILIAL, SBF.BF_PRODUTO, SBF.BF_LOCALIZ, SA1.A1_COD, SA1.A1_LOJA "
+						cQuery := ChangeQuery(cQuery)
+						dbUseArea(.T., "TOPCONN", TcGenQry(,,cQuery), cAliasSBF, .F., .T.)
 
-						(caliasSBF)->(dbGoTop())
-						While (caliasSBF)->(!Eof()  )
-							cIND_EST := "2"
-							cCOD_PART := "SA1"+ (caliasSBF)->A1_COD+(caliasSBF)->A1_LOJA
-
-							If !(cAliK200)->(MSSeek(cSB9Filial+dtos(dDataAte)+(cAliasTmp)->B9_COD+cIND_EST+cCOD_PART))
+						(cAliasSBF)->(dbGoTop())
+						While (cAliasSBF)->(!Eof())
+							cIND_EST  := "2"
+							cCOD_PART := "SA1" + (cAliasSBF)->A1_COD + (cAliasSBF)->A1_LOJA
+							// Chave K200: FILIAL + DATA + PRODUTO + IND_EST + COD_PART
+							If !(cAliK200)->(MSSeek(cSB9Filial + DTOS(dDataAte) + cProdAtu + cIND_EST + cCOD_PART))
 								Reclock(cAliK200,.T.)
-								(cAliK200)->FILIAL		:= cSB9Filial
-								(cAliK200)->REG			:= "K200"
-								(cAliK200)->DT_EST		:= dDataAte
-								(cAliK200)->COD_ITEM	:= (cAliasTmp)->B9_COD
-								(cAliK200)->QTD			:= (caliasSBF)->BF_QUANT
-								(cAliK200)->IND_EST		:= "2"
-								(cAliK200)->COD_PART	:="SA1"+ (caliasSBF)->A1_COD+(caliasSBF)->A1_LOJA
+								(cAliK200)->FILIAL   := cSB9Filial
+								(cAliK200)->REG      := "K200"
+								(cAliK200)->DT_EST   := dDataAte
+								(cAliK200)->COD_ITEM := cProdAtu
+								(cAliK200)->QTD      := (cAliasSBF)->BF_QUANT
+								(cAliK200)->IND_EST  := cIND_EST
+								(cAliK200)->COD_PART := cCOD_PART
 								(cAliK200)->(MsUnLock())
-							Endif
-							(caliasSBF)->(dbSkip())
+							EndIf
+							(cAliasSBF)->(dbSkip())
 						EndDo
 
-						(caliasSBF)->(dbCloseArea())
+						(cAliasSBF)->(dbCloseArea())
 					else
 						If Empty(cClientAtu)
 							cIND_EST := "0"
@@ -208,7 +233,7 @@ static Function JobK200(nThread,cName,aK200,cAliasTmp,cAliSumTer,dDataAte)
 
 						Else
 							cIND_EST := "2"
-							cCOD_PART := "SA1"+cClientAtu
+							cCOD_PART := "SA1" + cClientAtu
 						EndIf
 
 						If (cAliK200)->(MSSeek(cSB9Filial+dtos(dDataAte)+cProdAtu+cIND_EST+cCOD_PART))
@@ -228,8 +253,10 @@ static Function JobK200(nThread,cName,aK200,cAliasTmp,cAliSumTer,dDataAte)
 						EndIf
 					endif
 				EndIf
-				cClientAtu := (cAliasTmp)->(D3E_CLIENT+D3E_LOJA)
-				cProdAtu := (cAliasTmp)->B9_COD
+				If !(cAliasTmp)->(Eof())
+					cClientAtu := (cAliasTmp)->(D3E_CLIENT+D3E_LOJA)
+					cProdAtu := (cAliasTmp)->B9_COD
+				EndIf
 				nSaldo := 0
 			EndIf
 		EndIf
@@ -375,7 +402,8 @@ User Function TmpBlcK(cAlias0210,cAliasK200,cAliasK220,cAliasK230,cAliasK235,cAl
 	Local nTamCod := TamSX3("B1_COD")[1]
 	Local nTamChave := TamSX3("D1_COD")[1] + TamSX3("D1_SERIE")[1] + TamSX3("D1_FORNECE")[1] + TamSX3("D1_LOJA")[1]
 
-	Local nTamPar := TamSX3("A1_COD")[1] + TamSX3("A1_LOJA")[1]
+	// CHAMADO 15350: COD_PART recebe prefixo da tabela (SA1/SA2) + codigo + loja
+	Local nTamPar := Max( 3 + TamSX3("A1_COD")[1] + TamSX3("A1_LOJA")[1], 3 + TamSX3("A2_COD")[1] + TamSX3("A2_LOJA")[1] )
 	Local nTamReg := 4
 	Local cArq0210 := ''
 	Local cArqK200 := ''
@@ -437,12 +465,13 @@ User Function TmpBlcK(cAlias0210,cAliasK200,cAliasK220,cAliasK230,cAliasK235,cAl
 
 	cAliasK200 := "K200"
 	cArqK200 := Left( cAliasK200, 7 ) + "1"
-	
+
 
 	oTempTable := FWTemporaryTable():New( cAliasK200 )
 	oTemptable:SetFields(aCampos )
 
-	oTempTable:AddIndex(cArqK200, {"FILIAL","DT_EST","COD_ITEM"} )
+	// CHAMADO 15350: o indice deve refletir a chave utilizada nos MSSeek do K200
+	oTempTable:AddIndex(cArqK200, {"FILIAL","DT_EST","COD_ITEM","IND_EST","COD_PART"} )
 	oTempTable:Create()
 
 	DbSelectArea(cAliasK200)
@@ -646,8 +675,8 @@ User Function TmpBlcK(cAlias0210,cAliasK200,cAliasK220,cAliasK230,cAliasK235,cAl
 	AADD(aCampos,{"REG" ,"C",nTamReg ,0}) //Texto fixo contendo "K265"
 	AADD(aCampos,{"COD_OP_OS" ,"C",nTamChave ,0}) // Campo chave que liga ao registro Pai K260
 	AADD(aCampos,{"COD_ITEM" ,"D",nTamDt ,0}) //Código da mercadoria (campo 02 do Registro 0200)
-	AADD(aCampos,{"QTD_CONS" ,"C",nTamCod ,0}) //Quantidade consumida – saída do estoque
-	AADD(aCampos,{"QTD_RET" ,"C",nTamCod ,0}) //Quantidade retornada – entrada em estoque
+	AADD(aCampos,{"QTD_CONS" ,"C",nTamCod ,0}) //Quantidade consumida à saída do estoque
+	AADD(aCampos,{"QTD_RET" ,"C",nTamCod ,0}) //Quantidade retornada à entrada em estoque
 
 	cAliasK265 := "K265"
 	cArqK265 := Left( cAliasK265, 7 ) + "1"
@@ -889,6 +918,7 @@ Static Function GetSldTerc(cTipoTerc ,dDataAte ,cCodProdDe ,cCodProdAte ,cAliK20
 	Local cIND_EST
 	Local lPropr
 	Local cKey
+	Local cPessoa
 	Local nSaldoFis
 	Local nSaldoVir
 	Local nB6QtGtSlT1 := TamSX3("B6_QUANT")[1]
@@ -948,7 +978,8 @@ Static Function GetSldTerc(cTipoTerc ,dDataAte ,cCodProdDe ,cCodProdAte ,cAliK20
 			If lPropr
 				cKey := 'SA1'+(cAliTerc)->(B6_CLIPROP+B6_LJCLIPR)
 			else
-				cKey := (cAliTerc)->(LEFT(PESSOA,3)+B6_CLIFOR+B6_LOJA)
+				cPessoa := AllTrim((cAliTerc)->PESSOA)
+				cKey := cPessoa+(cAliTerc)->B6_CLIFOR+(cAliTerc)->B6_LOJA
 			Endif
 			If (cAliK200)->(MsSeek(cSB9Filial+DTOS(dDataAte)+(cAliTerc)->(B6_PRODUTO+cIND_EST)+cKey))
 				If ((cAliK200)->QTD + (cAliTerc)->SALDO) <= 0
@@ -1714,4 +1745,3 @@ Static Function ProcSumTerc(cAliK200,cAliSumTer)
 	RestArea(aArea)
 
 Return
-
